@@ -36,19 +36,50 @@ router.post('/:connectionId/execute', async (req, res) => {
     }
 });
 
-// Saved Queries CRUD
+// Get all saved queries
 router.get('/saved', (req, res) => {
-    db.all("SELECT * FROM saved_queries ORDER BY created_at DESC", [], (err, rows) => {
+    db.all("SELECT * FROM saved_queries ORDER BY sort_order ASC, created_at DESC", [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(rows);
     });
 });
 
+// Save a query
 router.post('/saved', (req, res) => {
     const { name, query, folder } = req.body;
-    db.run("INSERT INTO saved_queries (name, query, folder) VALUES (?, ?, ?)", [name, query, folder], function (err) {
+    if (!name || !query) return res.status(400).json({ error: 'Name and query are required' });
+
+    // Get max sort_order
+    db.get("SELECT MAX(sort_order) as maxOrder FROM saved_queries WHERE folder = ?", [folder || null], (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
-        res.json({ id: this.lastID, name, query, folder });
+        const nextOrder = (row && row.maxOrder !== null) ? row.maxOrder + 1 : 0;
+
+        db.run("INSERT INTO saved_queries (name, query, folder, sort_order) VALUES (?, ?, ?, ?)", [name, query, folder, nextOrder], function (err) {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ id: this.lastID, name, query, folder, sort_order: nextOrder });
+        });
+    });
+});
+
+// Reorder queries
+router.post('/saved/reorder', (req, res) => {
+    const { items } = req.body; // Array of { id, sort_order }
+    if (!Array.isArray(items)) return res.status(400).json({ error: 'Invalid items array' });
+
+    const dbSerialize = db.serialize.bind(db);
+    dbSerialize(() => {
+        db.run("BEGIN TRANSACTION");
+        const stmt = db.prepare("UPDATE saved_queries SET sort_order = ? WHERE id = ?");
+
+        items.forEach(item => {
+            stmt.run(item.sort_order, item.id);
+        });
+
+        stmt.finalize();
+        db.run("COMMIT", (err) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: true });
+        });
     });
 });
 
@@ -57,6 +88,21 @@ router.put('/saved/:id', (req, res) => {
     db.run("UPDATE saved_queries SET name = ?, query = ?, folder = ? WHERE id = ?", [name, query, folder, req.params.id], function (err) {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ message: 'Updated', id: req.params.id, name, query, folder });
+    });
+});
+
+router.delete('/saved/folder/:folder', (req, res) => {
+    const folder = req.params.folder;
+    let query = "DELETE FROM saved_queries WHERE folder = ?";
+    let params = [folder];
+
+    if (folder === 'Uncategorized') {
+        query = "DELETE FROM saved_queries WHERE folder = ? OR folder IS NULL OR folder = ''";
+    }
+
+    db.run(query, params, function (err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ message: 'Folder deleted', changes: this.changes });
     });
 });
 

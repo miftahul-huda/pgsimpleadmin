@@ -23,7 +23,17 @@ const ImportModal = ({ isOpen, onClose, connectionId, tableName, onSuccess }) =>
     const [showSaveModal, setShowSaveModal] = useState(false);
     const [templateName, setTemplateName] = useState('');
 
+    const [activeTab, setActiveTab] = useState('import'); // 'import' or 'history'
+    const [history, setHistory] = useState([]);
 
+    const fetchHistory = async () => {
+        try {
+            const res = await api.get(`/import/${connectionId}/history/${tableName}`);
+            setHistory(res.data);
+        } catch (err) {
+            console.error("Failed to fetch history:", err);
+        }
+    };
 
     const fetchSavedMappings = async () => {
         try {
@@ -210,6 +220,8 @@ const ImportModal = ({ isOpen, onClose, connectionId, tableName, onSuccess }) =>
             setFileId(null);
             setShowSaveModal(false);
             setTemplateName('');
+            setActiveTab('import');
+            fetchHistory();
         }
     }, [isOpen, connectionId, tableName]);
 
@@ -231,154 +243,220 @@ const ImportModal = ({ isOpen, onClose, connectionId, tableName, onSuccess }) =>
 
                 <h2 style={{ marginTop: 0, marginBottom: '0.5rem' }}>Import Data to {tableName}</h2>
 
-                {/* Stepper */}
-                <div style={{ display: 'flex', alignItems: 'center', marginBottom: '2rem', gap: '1rem' }}>
-                    <div style={{
-                        width: '30px', height: '30px', borderRadius: '50%',
-                        background: step >= 1 ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold'
-                    }}>1</div>
-                    <div style={{ height: '2px', width: '50px', background: step >= 2 ? 'var(--accent-primary)' : 'var(--bg-tertiary)' }} />
-                    <div style={{
-                        width: '30px', height: '30px', borderRadius: '50%',
-                        background: step >= 2 ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold'
-                    }}>2</div>
-                    <div style={{ height: '2px', width: '50px', background: step >= 3 ? 'var(--accent-primary)' : 'var(--bg-tertiary)' }} />
-                    <div style={{
-                        width: '30px', height: '30px', borderRadius: '50%',
-                        background: step >= 3 ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold'
-                    }}>3</div>
+                <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: '1.5rem' }}>
+                    <button
+                        onClick={() => setActiveTab('import')}
+                        style={{
+                            padding: '0.75rem 1.5rem',
+                            background: 'transparent',
+                            border: 'none',
+                            borderBottom: activeTab === 'import' ? '2px solid var(--accent-primary)' : 'none',
+                            color: activeTab === 'import' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                            fontWeight: '600',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        New Import
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('history')}
+                        style={{
+                            padding: '0.75rem 1.5rem',
+                            background: 'transparent',
+                            border: 'none',
+                            borderBottom: activeTab === 'history' ? '2px solid var(--accent-primary)' : 'none',
+                            color: activeTab === 'history' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                            fontWeight: '600',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        Import History
+                    </button>
                 </div>
 
-                {step === 1 && (
-                    <div>
-                        <div style={{ marginBottom: '1.5rem' }}>
-                            <label style={{ display: 'block', marginBottom: '0.5rem' }}>CSV or XLSX File</label>
+                {activeTab === 'import' ? (
+                    <>
+                        {/* Stepper */}
+                        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '2rem', gap: '1rem' }}>
                             <div style={{
-                                border: '2px dashed var(--border)', borderRadius: 'var(--radius)', padding: '2rem',
-                                textAlign: 'center', cursor: 'pointer', background: 'var(--bg-primary)'
-                            }}>
-                                <input
-                                    type="file"
-                                    accept=".csv, .xlsx"
-                                    onChange={e => setFile(e.target.files[0])}
-                                    style={{ display: 'none' }}
-                                    id="modal-file-upload"
-                                />
-                                <label htmlFor="modal-file-upload" style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-                                    <Upload size={32} color="var(--text-secondary)" />
-                                    <span style={{ color: 'var(--text-secondary)' }}>
-                                        {file ? file.name : 'Click to upload file'}
-                                    </span>
-                                </label>
-                            </div>
+                                width: '30px', height: '30px', borderRadius: '50%',
+                                background: step >= 1 ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold'
+                            }}>1</div>
+                            <div style={{ height: '2px', width: '50px', background: step >= 2 ? 'var(--accent-primary)' : 'var(--bg-tertiary)' }} />
+                            <div style={{
+                                width: '30px', height: '30px', borderRadius: '50%',
+                                background: step >= 2 ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold'
+                            }}>2</div>
+                            <div style={{ height: '2px', width: '50px', background: step >= 3 ? 'var(--accent-primary)' : 'var(--bg-tertiary)' }} />
+                            <div style={{
+                                width: '30px', height: '30px', borderRadius: '50%',
+                                background: step >= 3 ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold'
+                            }}>3</div>
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                            <button className="btn btn-primary" onClick={handleFileUpload} disabled={loading || !file}>
-                                {loading ? 'Uploading...' : 'Next: Map Columns'}
-                            </button>
-                        </div>
-                    </div>
-                )}
 
-                {step === 2 && (
-                    <div>
-                        <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                                {sheets.length > 0 && (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                        <label style={{ fontWeight: '600' }}>Sheet:</label>
-                                        <select
-                                            className="input"
-                                            value={selectedSheet}
-                                            onChange={handleSheetChange}
-                                            style={{ minWidth: '120px' }}
-                                        >
-                                            {sheets.map(s => <option key={s} value={s}>{s}</option>)}
-                                        </select>
+                        {step === 1 && (
+                            <div>
+                                <div style={{ marginBottom: '1.5rem' }}>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem' }}>CSV or XLSX File</label>
+                                    <div style={{
+                                        border: '2px dashed var(--border)', borderRadius: 'var(--radius)', padding: '2rem',
+                                        textAlign: 'center', cursor: 'pointer', background: 'var(--bg-primary)'
+                                    }}>
+                                        <input
+                                            type="file"
+                                            accept=".csv, .xlsx"
+                                            onChange={e => setFile(e.target.files[0])}
+                                            style={{ display: 'none' }}
+                                            id="modal-file-upload"
+                                        />
+                                        <label htmlFor="modal-file-upload" style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                                            <Upload size={32} color="var(--text-secondary)" />
+                                            <span style={{ color: 'var(--text-secondary)' }}>
+                                                {file ? file.name : 'Click to upload file'}
+                                            </span>
+                                        </label>
                                     </div>
-                                )}
-
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <label style={{ fontWeight: '600' }}>Template:</label>
-                                    <select className="input" onChange={handleLoadMapping} style={{ minWidth: '120px' }}>
-                                        <option value="">Load...</option>
-                                        {savedMappings.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                                    </select>
-                                    <button className="btn btn-secondary" onClick={handleSaveMapping} style={{ padding: '0.5rem' }} title="Save current mapping">
-                                        Save
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                    <button className="btn btn-primary" onClick={handleFileUpload} disabled={loading || !file}>
+                                        {loading ? 'Uploading...' : 'Next: Map Columns'}
                                     </button>
                                 </div>
                             </div>
-                            <button className="btn btn-secondary" onClick={autoMap}>
-                                Smart Auto Map
-                            </button>
-                        </div>
-
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 40px', gap: '1rem', marginBottom: '2rem', maxHeight: '400px', overflowY: 'auto' }}>
-                            <div style={{ fontWeight: '600', color: 'var(--text-secondary)' }}>Source Column</div>
-                            <div style={{ fontWeight: '600', color: 'var(--text-secondary)' }}>Target Column</div>
-                            <div style={{ fontWeight: '600', color: 'var(--text-secondary)' }}>Preview</div>
-                            <div style={{ fontWeight: '600', color: 'var(--text-secondary)' }}></div>
-
-                            {Object.keys(mappings).map(csvHeader => (
-                                <React.Fragment key={csvHeader}>
-                                    <div style={{ padding: '0.5rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius)', display: 'flex', alignItems: 'center' }}>
-                                        {csvHeader}
-                                    </div>
-                                    <div>
-                                        <select
-                                            className="input"
-                                            value={mappings[csvHeader]}
-                                            onChange={e => setMappings({ ...mappings, [csvHeader]: e.target.value })}
-                                            style={{ padding: '0.5rem' }}
-                                        >
-                                            <option value="">-- Skip --</option>
-                                            {dbColumns.map(col => <option key={col} value={col}>{col}</option>)}
-                                        </select>
-                                    </div>
-                                    <div style={{ padding: '0.5rem', color: 'var(--text-secondary)', fontStyle: 'italic', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-                                        {preview.rows[0] ? String(preview.rows[0][csvHeader]) : ''}
-                                    </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <button
-                                            onClick={() => removeColumn(csvHeader)}
-                                            style={{ background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '0.5rem' }}
-                                            title="Remove Column"
-                                        >
-                                            <X size={18} />
-                                        </button>
-                                    </div>
-                                </React.Fragment>
-                            ))}
-                        </div>
-
-                        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
-                            <button className="btn btn-secondary" onClick={() => setStep(1)}>Back</button>
-                            <button className="btn btn-primary" onClick={handleImport} disabled={loading}>
-                                {loading ? 'Importing...' : 'Run Import'}
-                            </button>
-                        </div>
-                    </div>
-                )}
-                {step === 3 && (
-                    <div style={{ textAlign: 'center', padding: '2rem' }}>
-                        <div style={{
-                            width: '60px', height: '60px', borderRadius: '50%', background: 'var(--success)',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem auto'
-                        }}>
-                            <Check color="white" size={32} />
-                        </div>
-                        <h2 style={{ marginTop: 0 }}>Import Complete</h2>
-                        <p>Successfully imported {importResult?.successCount} rows.</p>
-                        {importResult?.errorCount > 0 && (
-                            <p style={{ color: 'var(--danger)' }}>Failed to import {importResult.errorCount} rows.</p>
                         )}
-                        <button className="btn btn-primary" onClick={onClose}>
-                            Close
-                        </button>
+
+                        {step === 2 && (
+                            <div>
+                                <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                        {sheets.length > 0 && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <label style={{ fontWeight: '600' }}>Sheet:</label>
+                                                <select
+                                                    className="input"
+                                                    value={selectedSheet}
+                                                    onChange={handleSheetChange}
+                                                    style={{ minWidth: '120px' }}
+                                                >
+                                                    {sheets.map(s => <option key={s} value={s}>{s}</option>)}
+                                                </select>
+                                            </div>
+                                        )}
+
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <label style={{ fontWeight: '600' }}>Template:</label>
+                                            <select className="input" onChange={handleLoadMapping} style={{ minWidth: '120px' }}>
+                                                <option value="">Load...</option>
+                                                {savedMappings.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                                            </select>
+                                            <button className="btn btn-secondary" onClick={handleSaveMapping} style={{ padding: '0.5rem' }} title="Save current mapping">
+                                                Save
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <button className="btn btn-secondary" onClick={autoMap}>
+                                        Smart Auto Map
+                                    </button>
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 40px', gap: '1rem', marginBottom: '2rem', maxHeight: '400px', overflowY: 'auto' }}>
+                                    <div style={{ fontWeight: '600', color: 'var(--text-secondary)' }}>Source Column</div>
+                                    <div style={{ fontWeight: '600', color: 'var(--text-secondary)' }}>Target Column</div>
+                                    <div style={{ fontWeight: '600', color: 'var(--text-secondary)' }}>Preview</div>
+                                    <div style={{ fontWeight: '600', color: 'var(--text-secondary)' }}></div>
+
+                                    {Object.keys(mappings).map(csvHeader => (
+                                        <React.Fragment key={csvHeader}>
+                                            <div style={{ padding: '0.5rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius)', display: 'flex', alignItems: 'center' }}>
+                                                {csvHeader}
+                                            </div>
+                                            <div>
+                                                <select
+                                                    className="input"
+                                                    value={mappings[csvHeader]}
+                                                    onChange={e => setMappings({ ...mappings, [csvHeader]: e.target.value })}
+                                                    style={{ padding: '0.5rem' }}
+                                                >
+                                                    <option value="">-- Skip --</option>
+                                                    {dbColumns.map(col => <option key={col} value={col}>{col}</option>)}
+                                                </select>
+                                            </div>
+                                            <div style={{ padding: '0.5rem', color: 'var(--text-secondary)', fontStyle: 'italic', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                                                {preview.rows[0] ? String(preview.rows[0][csvHeader]) : ''}
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                <button
+                                                    onClick={() => removeColumn(csvHeader)}
+                                                    style={{ background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '0.5rem' }}
+                                                    title="Remove Column"
+                                                >
+                                                    <X size={18} />
+                                                </button>
+                                            </div>
+                                        </React.Fragment>
+                                    ))}
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+                                    <button className="btn btn-secondary" onClick={() => setStep(1)}>Back</button>
+                                    <button className="btn btn-primary" onClick={handleImport} disabled={loading}>
+                                        {loading ? 'Importing...' : 'Run Import'}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                        {step === 3 && (
+                            <div style={{ textAlign: 'center', padding: '2rem' }}>
+                                <div style={{
+                                    width: '60px', height: '60px', borderRadius: '50%', background: 'var(--success)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem auto'
+                                }}>
+                                    <Check color="white" size={32} />
+                                </div>
+                                <h2 style={{ marginTop: 0 }}>Import Complete</h2>
+                                <p>Successfully imported {importResult?.successCount} rows.</p>
+                                {importResult?.errorCount > 0 && (
+                                    <p style={{ color: 'var(--danger)' }}>Failed to import {importResult.errorCount} rows.</p>
+                                )}
+                                <button className="btn btn-primary" onClick={onClose}>
+                                    Close
+                                </button>
+                            </div>
+                        )}
+                    </>
+                ) : (
+                    <div style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+                        {history.length === 0 ? (
+                            <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                No import history found.
+                            </div>
+                        ) : (
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                                <thead>
+                                    <tr style={{ background: 'var(--bg-tertiary)', textAlign: 'left' }}>
+                                        <th style={{ padding: '0.75rem', borderBottom: '1px solid var(--border)' }}>Date</th>
+                                        <th style={{ padding: '0.75rem', borderBottom: '1px solid var(--border)' }}>Filename</th>
+                                        <th style={{ padding: '0.75rem', borderBottom: '1px solid var(--border)' }}>Rows</th>
+                                        <th style={{ padding: '0.75rem', borderBottom: '1px solid var(--border)' }}>Errors</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {history.map(item => (
+                                        <tr key={item.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                                            <td style={{ padding: '0.75rem' }}>{new Date(item.created_at).toLocaleString()}</td>
+                                            <td style={{ padding: '0.75rem' }}>{item.file_name}</td>
+                                            <td style={{ padding: '0.75rem', color: 'var(--success)' }}>{item.row_count}</td>
+                                            <td style={{ padding: '0.75rem', color: item.error_count > 0 ? 'var(--danger)' : 'var(--text-secondary)' }}>
+                                                {item.error_count}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
                     </div>
                 )}
             </div>

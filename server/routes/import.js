@@ -1,5 +1,12 @@
 const express = require('express');
 const router = express.Router();
+console.log("Import routes module loaded!");
+
+router.use((req, res, next) => {
+    console.log(`[Import Route Debug] ${req.method} ${req.url}`);
+    next();
+});
+
 const multer = require('multer');
 const csv = require('csv-parser');
 const xlsx = require('xlsx');
@@ -205,6 +212,11 @@ router.post('/:connectionId/execute-import', async (req, res) => {
         }
 
         await dbManager.commit(conn);
+
+        // Record history
+        db.run("INSERT INTO import_history (connection_id, table_name, file_name, row_count, error_count) VALUES (?, ?, ?, ?, ?)",
+            [connectionId, table, fileId || 'Unknown File', successCount, errorCount]);
+
         res.json({ success: true, successCount, errorCount });
 
     } catch (err) {
@@ -213,6 +225,22 @@ router.post('/:connectionId/execute-import', async (req, res) => {
     } finally {
         if (conn) await dbManager.close(conn);
     }
+});
+
+router.get('/:connectionId/history', (req, res) => {
+    const { connectionId } = req.params;
+    db.all("SELECT * FROM import_history WHERE connection_id = ? ORDER BY created_at DESC", [connectionId], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows);
+    });
+});
+
+router.get('/:connectionId/history/:tableName', (req, res) => {
+    const { connectionId, tableName } = req.params;
+    db.all("SELECT * FROM import_history WHERE connection_id = ? AND table_name = ? ORDER BY created_at DESC", [connectionId, tableName], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows);
+    });
 });
 
 router.get('/:connectionId/mappings/:tableName', async (req, res) => {

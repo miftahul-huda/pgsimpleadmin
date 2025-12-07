@@ -94,7 +94,7 @@ button {
 }
 
 .page-container {
-  max-width: 1200px;
+  width: 100%;
   margin: 0 auto;
   padding: 2rem;
 }
@@ -104,13 +104,16 @@ button {
   width: 8px;
   height: 8px;
 }
+
 ::-webkit-scrollbar-track {
-  background: var(--bg-primary); 
+  background: var(--bg-primary);
 }
+
 ::-webkit-scrollbar-thumb {
-  background: var(--bg-tertiary); 
+  background: var(--bg-tertiary);
   border-radius: 4px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-secondary); 
+  background: var(--text-secondary);
 }

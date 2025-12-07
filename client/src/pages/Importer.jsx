@@ -247,220 +247,342 @@ const Importer = () => {
         setMappings(newMappings);
     };
 
+    // ... (existing imports and component start)
+
+    const [view, setView] = useState('new'); // 'new' or 'history'
+    const [history, setHistory] = useState([]);
+
+    const fetchHistory = async () => {
+        if (!selectedConnection) return;
+        try {
+            const res = await api.get(`/import/${selectedConnection}/history`);
+            if (Array.isArray(res.data)) {
+                setHistory(res.data);
+            } else {
+                console.error("History response is not an array", res.data);
+                setHistory([]);
+            }
+        } catch (err) {
+            console.error("Failed to fetch history:", err);
+            setHistory([]);
+        }
+    };
+
+    useEffect(() => {
+        if (view === 'history' && selectedConnection) {
+            fetchHistory();
+        }
+    }, [view, selectedConnection]);
+
+    // ... (existing helper functions: fetchConnections, etc.)
+
     return (
         <div className="page-container">
-            <h1 style={{ marginBottom: '2rem' }}>Import Data</h1>
-
-            {/* Stepper */}
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '2rem', gap: '1rem' }}>
-                <div style={{
-                    width: '30px', height: '30px', borderRadius: '50%',
-                    background: step >= 1 ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold'
-                }}>1</div>
-                <div style={{ height: '2px', width: '50px', background: step >= 2 ? 'var(--accent-primary)' : 'var(--bg-tertiary)' }} />
-                <div style={{
-                    width: '30px', height: '30px', borderRadius: '50%',
-                    background: step >= 2 ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold'
-                }}>2</div>
-                <div style={{ height: '2px', width: '50px', background: step >= 3 ? 'var(--accent-primary)' : 'var(--bg-tertiary)' }} />
-                <div style={{
-                    width: '30px', height: '30px', borderRadius: '50%',
-                    background: step >= 3 ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold'
-                }}>3</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+                <h1 style={{ margin: 0 }}>Import Data</h1>
+                <div style={{ display: 'flex', background: 'var(--bg-secondary)', padding: '0.25rem', borderRadius: 'var(--radius)' }}>
+                    <button
+                        onClick={() => setView('new')}
+                        style={{
+                            background: view === 'new' ? 'var(--accent-primary)' : 'transparent',
+                            color: view === 'new' ? 'white' : 'var(--text-secondary)',
+                            border: 'none', padding: '0.5rem 1rem', borderRadius: 'var(--radius)', cursor: 'pointer', fontWeight: '500'
+                        }}
+                    >
+                        New Import
+                    </button>
+                    <button
+                        onClick={() => setView('history')}
+                        style={{
+                            background: view === 'history' ? 'var(--accent-primary)' : 'transparent',
+                            color: view === 'history' ? 'white' : 'var(--text-secondary)',
+                            border: 'none', padding: '0.5rem 1rem', borderRadius: 'var(--radius)', cursor: 'pointer', fontWeight: '500'
+                        }}
+                    >
+                        History
+                    </button>
+                </div>
             </div>
 
-            {step === 1 && (
-                <div className="glass-panel" style={{ padding: '2rem', maxWidth: '600px' }}>
-                    <h2 style={{ marginTop: 0 }}>Upload Source File</h2>
-                    <div style={{ marginBottom: '1.5rem' }}>
-                        <label style={{ display: 'block', marginBottom: '0.5rem' }}>Target Database</label>
+            {view === 'history' ? (
+                <div className="glass-panel" style={{ padding: '1rem', height: 'calc(100vh - 150px)', display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ marginBottom: '1rem' }}>
                         <select
                             className="input"
-                            style={{ width: '350px' }}
+                            style={{ width: '300px' }}
                             value={selectedConnection}
                             onChange={e => {
                                 setSelectedConnection(e.target.value);
                                 localStorage.setItem('lastSelectedConnection', e.target.value);
                             }}
                         >
-                            <option value="">Select Connection...</option>
+                            <option value="">Select Connection to View History...</option>
                             {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                         </select>
                     </div>
-                    <div style={{ marginBottom: '1.5rem' }}>
-                        <label style={{ display: 'block', marginBottom: '0.5rem' }}>CSV or XLSX File</label>
-                        <div style={{
-                            border: '2px dashed var(--border)', borderRadius: 'var(--radius)', padding: '2rem',
-                            textAlign: 'center', cursor: 'pointer', background: 'var(--bg-secondary)'
-                        }}>
-                            <input
-                                type="file"
-                                accept=".csv, .xlsx"
-                                onChange={e => setFile(e.target.files[0])}
-                                style={{ display: 'none' }}
-                                id="file-upload"
-                            />
-                            <label htmlFor="file-upload" style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-                                <Upload size={32} color="var(--text-secondary)" />
-                                <span style={{ color: 'var(--text-secondary)' }}>
-                                    {file ? file.name : 'Click to upload file'}
-                                </span>
-                            </label>
-                        </div>
-                    </div>
-                    <button className="btn btn-primary" onClick={handleFileUpload} disabled={loading || !file || !selectedConnection}>
-                        {loading ? 'Uploading...' : 'Next: Map Columns'}
-                    </button>
-                </div>
-            )}
 
-            {step === 2 && (
-                <div className="glass-panel" style={{ padding: '2rem' }}>
-                    <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                            {sheets.length > 0 && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <label style={{ fontWeight: '600' }}>Sheet:</label>
-                                    <select
-                                        className="input"
-                                        value={selectedSheet}
-                                        onChange={handleSheetChange}
-                                        style={{ minWidth: '150px' }}
-                                    >
-                                        {sheets.map(s => <option key={s} value={s}>{s}</option>)}
+                    {!selectedConnection ? (
+                        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
+                            Select a connection to view import history
+                        </div>
+                    ) : (
+                        <div style={{ overflowY: 'auto', flex: 1 }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                                <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-secondary)', zIndex: 1 }}>
+                                    <tr>
+                                        <th style={{ textAlign: 'left', padding: '0.75rem', borderBottom: '1px solid var(--border)' }}>Date</th>
+                                        <th style={{ textAlign: 'left', padding: '0.75rem', borderBottom: '1px solid var(--border)' }}>Table</th>
+                                        <th style={{ textAlign: 'left', padding: '0.75rem', borderBottom: '1px solid var(--border)' }}>File</th>
+                                        <th style={{ textAlign: 'center', padding: '0.75rem', borderBottom: '1px solid var(--border)' }}>Rows</th>
+                                        <th style={{ textAlign: 'center', padding: '0.75rem', borderBottom: '1px solid var(--border)' }}>Errors</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {(!Array.isArray(history) || history.length === 0) ? (
+                                        <tr><td colSpan="5" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No history found</td></tr>
+                                    ) : (
+                                        history.map(item => (
+                                            <tr key={item.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                                                <td style={{ padding: '0.75rem' }}>{new Date(item.created_at).toLocaleString()}</td>
+                                                <td style={{ padding: '0.75rem', fontWeight: '500' }}>{item.table_name}</td>
+                                                <td style={{ padding: '0.75rem', color: 'var(--text-secondary)' }}>{item.file_name}</td>
+                                                <td style={{ padding: '0.75rem', textAlign: 'center' }}>
+                                                    <span style={{ color: 'var(--success)', background: 'rgba(34, 197, 94, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>
+                                                        {item.row_count}
+                                                    </span>
+                                                </td>
+                                                <td style={{ padding: '0.75rem', textAlign: 'center' }}>
+                                                    {item.error_count > 0 ? (
+                                                        <span style={{ color: 'var(--danger)', background: 'rgba(239, 68, 68, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>
+                                                            {item.error_count}
+                                                        </span>
+                                                    ) : (
+                                                        <span style={{ color: 'var(--text-secondary)' }}>-</span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            ) : (
+                <>
+                    {/* Stepper */}
+                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '2rem', gap: '1rem' }}>
+                        <div style={{
+                            width: '30px', height: '30px', borderRadius: '50%',
+                            background: step >= 1 ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold'
+                        }}>1</div>
+                        <div style={{ height: '2px', width: '50px', background: step >= 2 ? 'var(--accent-primary)' : 'var(--bg-tertiary)' }} />
+                        <div style={{
+                            width: '30px', height: '30px', borderRadius: '50%',
+                            background: step >= 2 ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold'
+                        }}>2</div>
+                        <div style={{ height: '2px', width: '50px', background: step >= 3 ? 'var(--accent-primary)' : 'var(--bg-tertiary)' }} />
+                        <div style={{
+                            width: '30px', height: '30px', borderRadius: '50%',
+                            background: step >= 3 ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold'
+                        }}>3</div>
+                    </div>
+
+                    {step === 1 && (
+                        <div className="glass-panel" style={{ padding: '2rem', maxWidth: '600px' }}>
+                            <h2 style={{ marginTop: 0 }}>Upload Source File</h2>
+                            <div style={{ marginBottom: '1.5rem' }}>
+                                <label style={{ display: 'block', marginBottom: '0.5rem' }}>Target Database</label>
+                                <select
+                                    className="input"
+                                    style={{ width: '350px' }}
+                                    value={selectedConnection}
+                                    onChange={e => {
+                                        setSelectedConnection(e.target.value);
+                                        localStorage.setItem('lastSelectedConnection', e.target.value);
+                                    }}
+                                >
+                                    <option value="">Select Connection...</option>
+                                    {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                </select>
+                            </div>
+                            <div style={{ marginBottom: '1.5rem' }}>
+                                <label style={{ display: 'block', marginBottom: '0.5rem' }}>CSV or XLSX File</label>
+                                <div style={{
+                                    border: '2px dashed var(--border)', borderRadius: 'var(--radius)', padding: '2rem',
+                                    textAlign: 'center', cursor: 'pointer', background: 'var(--bg-secondary)'
+                                }}>
+                                    <input
+                                        type="file"
+                                        accept=".csv, .xlsx"
+                                        onChange={e => setFile(e.target.files[0])}
+                                        style={{ display: 'none' }}
+                                        id="file-upload"
+                                    />
+                                    <label htmlFor="file-upload" style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                                        <Upload size={32} color="var(--text-secondary)" />
+                                        <span style={{ color: 'var(--text-secondary)' }}>
+                                            {file ? file.name : 'Click to upload file'}
+                                        </span>
+                                    </label>
+                                </div>
+                            </div>
+                            <button className="btn btn-primary" onClick={handleFileUpload} disabled={loading || !file || !selectedConnection}>
+                                {loading ? 'Uploading...' : 'Next: Map Columns'}
+                            </button>
+                        </div>
+                    )}
+
+                    {step === 2 && (
+                        <div className="glass-panel" style={{ padding: '2rem' }}>
+                            <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                    {sheets.length > 0 && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <label style={{ fontWeight: '600' }}>Sheet:</label>
+                                            <select
+                                                className="input"
+                                                value={selectedSheet}
+                                                onChange={handleSheetChange}
+                                                style={{ minWidth: '150px' }}
+                                            >
+                                                {sheets.map(s => <option key={s} value={s}>{s}</option>)}
+                                            </select>
+                                        </div>
+                                    )}
+
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <label style={{ fontWeight: '600' }}>Template:</label>
+                                        <select className="input" onChange={handleLoadMapping} style={{ minWidth: '150px' }}>
+                                            <option value="">Load...</option>
+                                            {savedMappings.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                                        </select>
+                                        <button className="btn btn-secondary" onClick={handleSaveMapping} style={{ padding: '0.5rem' }} title="Save current mapping">
+                                            Save
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <h2 style={{ marginTop: 0 }}>Map Columns</h2>
+
+                            <div style={{ marginBottom: '2rem', display: 'flex', gap: '1rem', alignItems: 'flex-end' }}>
+                                <div style={{ flex: 1 }}>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem' }}>Target Table</label>
+                                    <select className="input" value={selectedTable} onChange={e => setSelectedTable(e.target.value)}>
+                                        <option value="">Select Table...</option>
+                                        {tables.map(t => <option key={t} value={t}>{t}</option>)}
                                     </select>
+                                </div>
+                                <button className="btn btn-secondary" onClick={autoMap} disabled={!selectedTable}>
+                                    Smart Auto Map
+                                </button>
+                            </div>
+
+                            {selectedTable && (
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 40px', gap: '1rem', marginBottom: '2rem' }}>
+                                    <div style={{ fontWeight: '600', color: 'var(--text-secondary)' }}>Source Column (File)</div>
+                                    <div style={{ fontWeight: '600', color: 'var(--text-secondary)' }}>Target Column (Database)</div>
+                                    <div style={{ fontWeight: '600', color: 'var(--text-secondary)' }}>Preview Value</div>
+                                    <div style={{ fontWeight: '600', color: 'var(--text-secondary)' }}></div>
+
+                                    {Object.keys(mappings).map(csvHeader => (
+                                        <React.Fragment key={csvHeader}>
+                                            <div style={{ padding: '0.5rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius)', display: 'flex', alignItems: 'center' }}>
+                                                {csvHeader}
+                                            </div>
+                                            <div>
+                                                <select
+                                                    className="input"
+                                                    value={mappings[csvHeader]}
+                                                    onChange={e => setMappings({ ...mappings, [csvHeader]: e.target.value })}
+                                                    style={{ padding: '0.5rem' }}
+                                                >
+                                                    <option value="">-- Skip --</option>
+                                                    {dbColumns.map(col => <option key={col} value={col}>{col}</option>)}
+                                                </select>
+                                            </div>
+                                            <div style={{ padding: '0.5rem', color: 'var(--text-secondary)', fontStyle: 'italic', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                                                {preview.rows[0] ? String(preview.rows[0][csvHeader]) : ''}
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                <button
+                                                    onClick={() => removeColumn(csvHeader)}
+                                                    style={{ background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '0.5rem' }}
+                                                    title="Remove Column"
+                                                >
+                                                    <AlertTriangle size={18} style={{ transform: 'rotate(180deg)' }} />
+                                                </button>
+                                            </div>
+                                        </React.Fragment>
+                                    ))}
                                 </div>
                             )}
 
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                <label style={{ fontWeight: '600' }}>Template:</label>
-                                <select className="input" onChange={handleLoadMapping} style={{ minWidth: '150px' }}>
-                                    <option value="">Load...</option>
-                                    {savedMappings.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                                </select>
-                                <button className="btn btn-secondary" onClick={handleSaveMapping} style={{ padding: '0.5rem' }} title="Save current mapping">
-                                    Save
+                            <div style={{ display: 'flex', gap: '1rem' }}>
+                                <button className="btn btn-secondary" onClick={() => setStep(1)}>Back</button>
+                                <button className="btn btn-primary" onClick={handleImport} disabled={loading || !selectedTable}>
+                                    {loading ? 'Importing...' : 'Run Import'}
                                 </button>
                             </div>
-                        </div>
-                    </div>
 
-                    <h2 style={{ marginTop: 0 }}>Map Columns</h2>
-
-                    <div style={{ marginBottom: '2rem', display: 'flex', gap: '1rem', alignItems: 'flex-end' }}>
-                        <div style={{ flex: 1 }}>
-                            <label style={{ display: 'block', marginBottom: '0.5rem' }}>Target Table</label>
-                            <select className="input" value={selectedTable} onChange={e => setSelectedTable(e.target.value)}>
-                                <option value="">Select Table...</option>
-                                {tables.map(t => <option key={t} value={t}>{t}</option>)}
-                            </select>
-                        </div>
-                        <button className="btn btn-secondary" onClick={autoMap} disabled={!selectedTable}>
-                            Smart Auto Map
-                        </button>
-                    </div>
-
-                    {selectedTable && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 40px', gap: '1rem', marginBottom: '2rem' }}>
-                            <div style={{ fontWeight: '600', color: 'var(--text-secondary)' }}>Source Column (File)</div>
-                            <div style={{ fontWeight: '600', color: 'var(--text-secondary)' }}>Target Column (Database)</div>
-                            <div style={{ fontWeight: '600', color: 'var(--text-secondary)' }}>Preview Value</div>
-                            <div style={{ fontWeight: '600', color: 'var(--text-secondary)' }}></div>
-
-                            {Object.keys(mappings).map(csvHeader => (
-                                <React.Fragment key={csvHeader}>
-                                    <div style={{ padding: '0.5rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius)', display: 'flex', alignItems: 'center' }}>
-                                        {csvHeader}
-                                    </div>
-                                    <div>
-                                        <select
-                                            className="input"
-                                            value={mappings[csvHeader]}
-                                            onChange={e => setMappings({ ...mappings, [csvHeader]: e.target.value })}
-                                            style={{ padding: '0.5rem' }}
-                                        >
-                                            <option value="">-- Skip --</option>
-                                            {dbColumns.map(col => <option key={col} value={col}>{col}</option>)}
-                                        </select>
-                                    </div>
-                                    <div style={{ padding: '0.5rem', color: 'var(--text-secondary)', fontStyle: 'italic', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-                                        {preview.rows[0] ? String(preview.rows[0][csvHeader]) : ''}
-                                    </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <button
-                                            onClick={() => removeColumn(csvHeader)}
-                                            style={{ background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '0.5rem' }}
-                                            title="Remove Column"
-                                        >
-                                            <AlertTriangle size={18} style={{ transform: 'rotate(180deg)' }} /> {/* Using AlertTriangle as placeholder for X if not imported, but I should check imports */}
-                                        </button>
-                                    </div>
-                                </React.Fragment>
-                            ))}
+                            <div style={{ marginTop: '1rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                                <AlertTriangle size={14} style={{ marginRight: '0.5rem', verticalAlign: 'middle' }} />
+                                Note: For this demo, only the preview rows will be imported.
+                            </div>
                         </div>
                     )}
 
-                    <div style={{ display: 'flex', gap: '1rem' }}>
-                        <button className="btn btn-secondary" onClick={() => setStep(1)}>Back</button>
-                        <button className="btn btn-primary" onClick={handleImport} disabled={loading || !selectedTable}>
-                            {loading ? 'Importing...' : 'Run Import'}
-                        </button>
-                    </div>
-
-                    <div style={{ marginTop: '1rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-                        <AlertTriangle size={14} style={{ marginRight: '0.5rem', verticalAlign: 'middle' }} />
-                        Note: For this demo, only the preview rows will be imported.
-                    </div>
-                </div>
-            )}
-
-            {step === 3 && (
-                <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center', maxWidth: '500px', margin: '0 auto' }}>
-                    <div style={{
-                        width: '60px', height: '60px', borderRadius: '50%', background: 'var(--success)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem auto'
-                    }}>
-                        <Check color="white" size={32} />
-                    </div>
-                    <h2 style={{ marginTop: 0 }}>Import Complete</h2>
-                    <p>Successfully imported {importResult?.successCount} rows.</p>
-                    {importResult?.errorCount > 0 && (
-                        <p style={{ color: 'var(--danger)' }}>Failed to import {importResult.errorCount} rows.</p>
+                    {step === 3 && (
+                        <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center', maxWidth: '500px', margin: '0 auto' }}>
+                            <div style={{
+                                width: '60px', height: '60px', borderRadius: '50%', background: 'var(--success)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem auto'
+                            }}>
+                                <Check color="white" size={32} />
+                            </div>
+                            <h2 style={{ marginTop: 0 }}>Import Complete</h2>
+                            <p>Successfully imported {importResult?.successCount} rows.</p>
+                            {importResult?.errorCount > 0 && (
+                                <p style={{ color: 'var(--danger)' }}>Failed to import {importResult.errorCount} rows.</p>
+                            )}
+                            <button className="btn btn-primary" onClick={() => { setStep(1); setFile(null); setImportResult(null); }}>
+                                Import Another File
+                            </button>
+                        </div>
                     )}
-                    <button className="btn btn-primary" onClick={() => { setStep(1); setFile(null); setImportResult(null); }}>
-                        Import Another File
-                    </button>
-                </div>
-            )}
-            {showSaveModal && (
-                <div style={{
-                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                    background: 'rgba(0,0,0,0.5)', zIndex: 1100,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                }}>
-                    <div className="glass-panel" style={{ width: '400px', padding: '2rem', background: 'var(--bg-secondary)' }}>
-                        <h3 style={{ marginTop: 0 }}>Save Mapping Template</h3>
-                        <div style={{ marginBottom: '1.5rem' }}>
-                            <label style={{ display: 'block', marginBottom: '0.5rem' }}>Template Name</label>
-                            <input
-                                type="text"
-                                className="input"
-                                value={templateName}
-                                onChange={e => setTemplateName(e.target.value)}
-                                placeholder="e.g., Monthly Sales Import"
-                                autoFocus
-                            />
+                    {showSaveModal && (
+                        <div style={{
+                            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                            background: 'rgba(0,0,0,0.5)', zIndex: 1100,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                        }}>
+                            <div className="glass-panel" style={{ width: '400px', padding: '2rem', background: 'var(--bg-secondary)' }}>
+                                <h3 style={{ marginTop: 0 }}>Save Mapping Template</h3>
+                                <div style={{ marginBottom: '1.5rem' }}>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem' }}>Template Name</label>
+                                    <input
+                                        type="text"
+                                        className="input"
+                                        value={templateName}
+                                        onChange={e => setTemplateName(e.target.value)}
+                                        placeholder="e.g., Monthly Sales Import"
+                                        autoFocus
+                                    />
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+                                    <button className="btn btn-secondary" onClick={() => setShowSaveModal(false)}>Cancel</button>
+                                    <button className="btn btn-primary" onClick={confirmSaveMapping}>Save</button>
+                                </div>
+                            </div>
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
-                            <button className="btn btn-secondary" onClick={() => setShowSaveModal(false)}>Cancel</button>
-                            <button className="btn btn-primary" onClick={confirmSaveMapping}>Save</button>
-                        </div>
-                    </div>
-                </div>
+                    )}
+                </>
             )}
+
         </div>
     );
 };

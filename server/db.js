@@ -64,6 +64,10 @@ const initDB = () => {
                 db.run("ALTER TABLE saved_queries ADD COLUMN folder TEXT", (err) => {
                     // Ignore error if column already exists
                 });
+                // Try to add sort_order column
+                db.run("ALTER TABLE saved_queries ADD COLUMN sort_order INTEGER DEFAULT 0", (err) => {
+                    // Ignore
+                });
             }
         });
 
@@ -74,6 +78,17 @@ const initDB = () => {
       table_name TEXT,
       name TEXT,
       mappings TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+
+        // Import History Table
+        db.run(`CREATE TABLE IF NOT EXISTS import_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      connection_id INTEGER,
+      table_name TEXT,
+      file_name TEXT,
+      row_count INTEGER,
+      error_count INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
     });

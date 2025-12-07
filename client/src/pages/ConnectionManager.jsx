@@ -64,7 +64,17 @@ const ConnectionManager = () => {
                         </div>
                         <div>
                             <label style={{ display: 'block', marginBottom: '0.5rem' }}>Type</label>
-                            <select className="input" value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value })}>
+                            <select
+                                className="input"
+                                value={formData.type}
+                                onChange={e => {
+                                    const newType = e.target.value;
+                                    let newPort = 5432;
+                                    if (newType === 'mysql') newPort = 3306;
+                                    if (newType === 'sqlserver') newPort = 1433;
+                                    setFormData({ ...formData, type: newType, port: newPort });
+                                }}
+                            >
                                 <option value="postgresql">PostgreSQL</option>
                                 <option value="mysql">MySQL</option>
                                 <option value="sqlserver">SQL Server</option>
@@ -107,7 +117,21 @@ const ConnectionManager = () => {
                             </div>
                             <div>
                                 <h3 style={{ margin: 0 }}>{conn.name}</h3>
-                                <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{conn.type}</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <span style={{
+                                        fontSize: '0.75rem',
+                                        padding: '0.2rem 0.5rem',
+                                        borderRadius: '4px',
+                                        background: conn.type === 'postgresql' ? 'rgba(49, 107, 131, 0.2)' :
+                                            conn.type === 'mysql' ? 'rgba(242, 145, 17, 0.2)' : 'rgba(169, 28, 28, 0.2)',
+                                        color: conn.type === 'postgresql' ? '#69b3e7' :
+                                            conn.type === 'mysql' ? '#f29111' : '#ef4444',
+                                        textTransform: 'uppercase',
+                                        fontWeight: 'bold'
+                                    }}>
+                                        {conn.type === 'sqlserver' ? 'MSSQL' : conn.type}
+                                    </span>
+                                </div>
                             </div>
                         </div>
                         <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>

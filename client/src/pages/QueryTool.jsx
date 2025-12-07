@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api';
-import { Play, Save, Trash2, Clock, Folder, Edit, ChevronDown, ChevronRight, Download } from 'lucide-react';
+import { Play, Save, Trash2, Clock, Folder, Edit, ChevronDown, ChevronRight, Download, ArrowUp, ArrowDown } from 'lucide-react';
 import CodeMirror from '@uiw/react-codemirror';
 import { sql } from '@codemirror/lang-sql';
 import * as XLSX from 'xlsx';
+import AlertModal from '../components/AlertModal';
+import ConfirmModal from '../components/ConfirmModal';
 
 const QueryTool = () => {
     const [connections, setConnections] = useState([]);
@@ -16,7 +18,14 @@ const QueryTool = () => {
     const [queryName, setQueryName] = useState('');
     const [folderName, setFolderName] = useState('');
     const [expandedFolders, setExpandedFolders] = useState({});
+    const [showVariableModal, setShowVariableModal] = useState(false);
     const [showDownloadModal, setShowDownloadModal] = useState(false);
+    const [queryVariables, setQueryVariables] = useState([]);
+    const [variableValues, setVariableValues] = useState({});
+
+    const [alertModal, setAlertModal] = useState({ isOpen: false, title: '', message: '' });
+    const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: () => { } });
+
     // showFilenameModal, downloadFormat, filename states removed
 
     const [editingQuery, setEditingQuery] = useState(null);
@@ -51,12 +60,33 @@ const QueryTool = () => {
     };
 
     const handleRun = async () => {
-        if (!selectedConnection) return alert('Select a connection first');
+        if (!selectedConnection) return setAlertModal({
+            isOpen: true,
+            title: 'Connection Required',
+            message: 'Please select a database connection first.'
+        });
+
+        // Detect variables
+        const varRegex = /{{(\w+)}}/g;
+        const vars = [...new Set([...query.matchAll(varRegex)].map(m => m[1]))];
+
+        if (vars.length > 0) {
+            setQueryVariables(vars);
+            // Initialize with empty strings or keep existing if re-running
+            setVariableValues(vars.reduce((acc, v) => ({ ...acc, [v]: '' }), {}));
+            setShowVariableModal(true);
+            return;
+        }
+
+        executeRun(query);
+    };
+
+    const executeRun = async (queryToExecute) => {
         setLoading(true);
         setError('');
         setResults(null);
         try {
-            const res = await api.post(`/query/${selectedConnection}/execute`, { query });
+            const res = await api.post(`/query/${selectedConnection}/execute`, { query: queryToExecute });
             setResults(res.data);
         } catch (err) {
             setError(err.response?.data?.error || err.message);
@@ -65,8 +95,21 @@ const QueryTool = () => {
         }
     };
 
+    const handleVariableSubmit = () => {
+        let finalQuery = query;
+        for (const [key, value] of Object.entries(variableValues)) {
+            finalQuery = finalQuery.replace(new RegExp(`{{${key}}}`, 'g'), value);
+        }
+        setShowVariableModal(false);
+        executeRun(finalQuery);
+    };
+
     const handleSave = async () => {
-        if (!queryName) return alert('Enter a name for the query');
+        if (!queryName) return setAlertModal({
+            isOpen: true,
+            title: 'Name Required',
+            message: 'Please enter a name for the query before saving.'
+        });
         try {
             if (editingQuery) {
                 await api.put(`/query/saved/${editingQuery.id}`, { name: queryName, query, folder: folderName });
@@ -78,7 +121,11 @@ const QueryTool = () => {
             // setFolderName(''); 
             fetchSavedQueries();
         } catch (err) {
-            alert('Failed to save');
+            setAlertModal({
+                isOpen: true,
+                title: 'Save Failed',
+                message: err.response?.data?.error || 'Failed to save query'
+            });
         }
     };
 
@@ -97,17 +144,85 @@ const QueryTool = () => {
     };
 
     const handleDeleteSaved = async (id) => {
-        if (window.confirm('Delete this query?')) {
-            try {
-                await api.delete(`/query/saved/${id}`);
-                fetchSavedQueries();
-            } catch (err) { console.error(err); }
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: 'Delete Query',
+            message: 'Are you sure you want to delete this saved query? This action cannot be undone.',
+            onConfirm: async () => {
+                try {
+                    await api.delete(`/query/saved/${id}`);
+                    fetchSavedQueries();
+                } catch (err) { console.error(err); }
+            }
+        });
+    };
+
+    const handleDeleteFolder = async (folder) => {
+        setConfirmModal({
+            isOpen: true,
+            title: 'Delete Folder',
+            message: `Are you sure you want to delete folder "${folder}" and all its saved queries? This action cannot be undone.`,
+            onConfirm: async () => {
+                try {
+                    await api.delete(`/query/saved/folder/${folder}`);
+                    fetchSavedQueries();
+                } catch (err) { console.error(err); }
+            }
+        });
     };
 
     const toggleFolder = (folder) => {
         setExpandedFolders(prev => ({ ...prev, [folder]: !prev[folder] }));
     };
+
+    const handleMoveQuery = async (query, direction) => {
+        const folder = query.folder || 'Uncategorized';
+        const currentList = groupedQueries[folder];
+        const currentIndex = currentList.findIndex(q => q.id === query.id);
+        const targetIndex = currentIndex + direction;
+
+        if (targetIndex < 0 || targetIndex >= currentList.length) return; // Cannot move
+
+        const targetQuery = currentList[targetIndex];
+
+        // Swap sort_order
+        // If sort_order is null/undefined (legacy), assume index based order could be fragile.
+        // Better to assign explicit orders if missing?
+        // Let's rely on what we just fetched which is sorted by sort_order.
+
+        // Optimistic update
+        // We know we want to swap these two.
+        // The API expects a list of {id, sort_order} to update.
+        // We can just swap their current sort_order values.
+
+        const item1Order = query.sort_order !== undefined ? query.sort_order : currentIndex;
+        const item2Order = targetQuery.sort_order !== undefined ? targetQuery.sort_order : targetIndex;
+
+        // Actually, if we just swap their sort_orders, that's enough for the DB.
+        // But if they have same sort_order (0 default), swapping 0 and 0 does nothing.
+        // We might need to re-index the whole folder to be safe.
+
+        const newItems = currentList.map((q, idx) => ({ ...q, sort_order: idx })); // Normalize to 0..N
+
+        // Swap in the array
+        const temp = newItems[currentIndex];
+        newItems[currentIndex] = newItems[targetIndex];
+        newItems[targetIndex] = temp;
+
+        // Re-assign sort_orders based on new array position
+        const updates = newItems.map((q, idx) => ({ id: q.id, sort_order: idx }));
+
+        try {
+            await api.post('/query/saved/reorder', { items: updates });
+            fetchSavedQueries();
+        } catch (err) {
+            console.error("Failed to reorder", err);
+        }
+    };
+
+    // ... handleDownload logic ...
+
+    // ...
 
     const handleDownloadCSV = () => {
         if (!results || !results.fields || results.fields.length === 0) return;
@@ -275,7 +390,7 @@ const QueryTool = () => {
                         value={folderName}
                         onChange={e => setFolderName(e.target.value)}
                         list="folder-list"
-                        style={{ width: '150px' }}
+                        style={{ width: '250px' }}
                     />
                     <datalist id="folder-list">
                         {existingFolders.map(f => <option key={f} value={f} />)}
@@ -368,7 +483,14 @@ const QueryTool = () => {
                                 >
                                     {expandedFolders[folder] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                                     <Folder size={14} color="var(--accent-primary)" />
-                                    {folder}
+                                    <span style={{ flex: 1 }}>{folder}</span>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); handleDeleteFolder(folder); }}
+                                        style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '2px', cursor: 'pointer' }}
+                                        title="Delete Folder"
+                                    >
+                                        <Trash2 size={12} />
+                                    </button>
                                 </div>
                                 {expandedFolders[folder] && (
                                     <div style={{ paddingLeft: '0.5rem', marginTop: '0.25rem' }}>
@@ -388,6 +510,20 @@ const QueryTool = () => {
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                     <span style={{ fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sq.name}</span>
                                                     <div style={{ display: 'flex', gap: '0.25rem' }}>
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); handleMoveQuery(sq, -1); }}
+                                                            style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: 0 }}
+                                                            title="Move Up"
+                                                        >
+                                                            <ArrowUp size={12} />
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); handleMoveQuery(sq, 1); }}
+                                                            style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: 0 }}
+                                                            title="Move Down"
+                                                        >
+                                                            <ArrowDown size={12} />
+                                                        </button>
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); handleEdit(sq); }}
                                                             style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: 0 }}
@@ -457,6 +593,65 @@ const QueryTool = () => {
                     </div>
                 </div>
             )}
+
+            {/* Variable Input Modal */}
+            {showVariableModal && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    background: 'rgba(0,0,0,0.5)', zIndex: 1100,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                    <div className="glass-panel" style={{ width: '400px', padding: '2rem', background: 'var(--bg-secondary)' }}>
+                        <h3 style={{ marginTop: 0, marginBottom: '1.5rem' }}>Enter Query Variables</h3>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
+                            {queryVariables.map(v => (
+                                <div key={v}>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 500 }}>
+                                        {v}
+                                    </label>
+                                    <input
+                                        className="input"
+                                        style={{ width: '100%' }}
+                                        value={variableValues[v] || ''}
+                                        onChange={e => setVariableValues(prev => ({ ...prev, [v]: e.target.value }))}
+                                        placeholder={`Value for {{${v}}}`}
+                                        autoFocus={queryVariables[0] === v}
+                                    />
+                                </div>
+                            ))}
+                        </div>
+                        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+                            <button
+                                className="btn btn-secondary"
+                                onClick={() => setShowVariableModal(false)}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className="btn btn-primary"
+                                onClick={handleVariableSubmit}
+                            >
+                                Run Query
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <AlertModal
+                isOpen={alertModal.isOpen}
+                title={alertModal.title}
+                message={alertModal.message}
+                onClose={() => setAlertModal({ ...alertModal, isOpen: false })}
+            />
+
+            <ConfirmModal
+                isOpen={confirmModal.isOpen}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                onConfirm={confirmModal.onConfirm}
+                onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+            />
 
         </div >
     );
