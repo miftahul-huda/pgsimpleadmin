@@ -25,6 +25,7 @@ class DBManager {
                     password: config.password,
                     database: config.database,
                     port: parseInt(config.port),
+                    multipleStatements: true
                 });
                 return { type: 'mysql', conn: connection };
             } else if (config.type === 'sqlserver') {
@@ -80,35 +81,67 @@ class DBManager {
         const { type, conn } = connection;
         try {
             if (type === 'postgresql') {
-                const res = await conn.query(query, params);
+                let res;
+                if (params && params.length > 0) {
+                    res = await conn.query(query, params);
+                } else {
+                    res = await conn.query(query);
+                }
+
+                // Handle multiple statements (pg returns array of results)
+                const result = Array.isArray(res) ? res[res.length - 1] : res;
+
                 return {
-                    rows: res.rows,
-                    fields: res.fields ? res.fields.map(f => f.name) : [],
-                    affectedRows: res.rowCount
+                    rows: result.rows || [],
+                    fields: result.fields ? result.fields.map(f => f.name) : [],
+                    affectedRows: result.rowCount
                 };
             } else if (type === 'mysql') {
-                const [rows, fields] = await conn.execute(query, params);
+                // Use .query instead of .execute to support multiple statements
+                const [rows, fields] = await conn.query(query, params);
+
+                // Handle multiple results
+                // If multiple statements, rows is Array of (Arrays or ResultSetHeaders)
+                // If single SELECT, rows is Array of RowDataPackets
+                // If single INSERT/UPDATE, rows is ResultSetHeader (Object)
+                let resultRows = rows;
+                let resultFields = fields;
+
                 if (Array.isArray(rows)) {
+                    // Check if it's a multi-statement result
+                    // If the first item is an Array (SELECT result) or ResultSetHeader (UPDATE result)
+                    if (rows.length > 0 && (Array.isArray(rows[0]) || (rows[0].constructor && rows[0].constructor.name === 'ResultSetHeader'))) {
+                        // It's likely a multi-result. Return the last one.
+                        const lastIndex = rows.length - 1;
+                        resultRows = rows[lastIndex];
+                        resultFields = Array.isArray(fields) ? fields[lastIndex] : fields;
+                    }
+                }
+
+                if (Array.isArray(resultRows)) {
                     return {
-                        rows,
-                        fields: fields.map(f => f.name),
-                        affectedRows: rows.length
+                        rows: resultRows,
+                        fields: resultFields ? resultFields.map(f => f.name) : [],
+                        affectedRows: resultRows.length
                     };
                 } else {
-                    // For INSERT/UPDATE/DELETE, rows is an object with affectedRows
+                    // ResultSetHeader
                     return {
                         rows: [],
                         fields: [],
-                        affectedRows: rows.affectedRows
+                        affectedRows: resultRows.affectedRows
                     };
                 }
             } else if (type === 'sqlserver') {
                 const res = await conn.request().query(query);
-                const fields = res.recordset && res.recordset.length > 0 ? Object.keys(res.recordset[0]) : [];
+                // mssql returns recordsets array for multiple queries
+                const recordset = res.recordsets && res.recordsets.length > 0 ? res.recordsets[res.recordsets.length - 1] : [];
+                const fields = recordset.columns ? Object.keys(recordset.columns) : (recordset.length > 0 ? Object.keys(recordset[0]) : []);
+
                 return {
-                    rows: res.recordset || [],
+                    rows: recordset,
                     fields,
-                    affectedRows: res.rowsAffected[0]
+                    affectedRows: res.rowsAffected ? res.rowsAffected.reduce((a, b) => a + b, 0) : 0
                 };
             }
         } catch (err) {
