@@ -119,15 +119,22 @@ const QueryTool = () => {
             title: 'Name Required',
             message: 'Please enter a name for the query before saving.'
         });
+
+        const payload = {
+            name: queryName,
+            query,
+            folder: folderName,
+            connectionId: selectedConnection
+        };
+
         try {
             if (editingQuery) {
-                await api.put(`/query/saved/${editingQuery.id}`, { name: queryName, query, folder: folderName });
+                await api.put(`/query/saved/${editingQuery.id}`, payload);
                 setEditingQuery(null);
             } else {
-                await api.post('/query/saved', { name: queryName, query, folder: folderName });
+                await api.post('/query/saved', payload);
             }
             setQueryName('');
-            // setFolderName(''); 
             fetchSavedQueries();
         } catch (err) {
             setAlertModal({
@@ -143,6 +150,9 @@ const QueryTool = () => {
         setQueryName(sq.name);
         setFolderName(sq.folder || '');
         setQuery(sq.query);
+        if (sq.connection_id && sq.connection_id != selectedConnection) {
+            setSelectedConnection(sq.connection_id);
+        }
     };
 
     const handleCancelEdit = () => {
@@ -398,87 +408,14 @@ const QueryTool = () => {
         }
     };
 
-    // Group queries by Connection -> Folder
-    const groupedByConnection = savedQueries.reduce((acc, sq) => {
-        const connId = sq.connection_id || 'unassigned';
-        if (!acc[connId]) acc[connId] = {};
-
-        const folder = sq.folder || 'Uncategorized';
-        if (!acc[connId][folder]) acc[connId][folder] = [];
-        acc[connId][folder].push(sq);
-        return acc;
-    }, {});
-
-    // Helper to get connection name
-    const getConnectionName = (id) => {
-        if (id === 'unassigned') return 'Unassigned / Global';
-        const conn = connections.find(c => c.id == id);
-        return conn ? conn.name : `Unknown Connection (${id})`;
-    };
-
-    // Sorted Connections
-    const sortedConnectionIds = Object.keys(groupedByConnection).sort((a, b) => {
-        if (a === 'unassigned') return 1; // Last
-        if (b === 'unassigned') return -1;
-        const nameA = getConnectionName(a);
-        const nameB = getConnectionName(b);
-        return nameA.localeCompare(nameB);
+    // Filter queries based on selected connection
+    const filteredQueries = savedQueries.filter(sq => {
+        if (!selectedConnection) return !sq.connection_id; // Unassigned if no connection selected
+        return String(sq.connection_id) === String(selectedConnection);
     });
 
-    const [expandedConnections, setExpandedConnections] = useState({});
-
-    // Toggle Connection
-    const toggleConnection = (connId) => {
-        setExpandedConnections(prev => ({ ...prev, [connId]: !prev[connId] }));
-    };
-
-    // Initial expand of active connection
-    useEffect(() => {
-        if (selectedConnection) {
-            setExpandedConnections(prev => ({ ...prev, [selectedConnection]: true, 'unassigned': true }));
-        }
-    }, [selectedConnection]);
-
-    const handleSave = async () => {
-        if (!queryName) return setAlertModal({
-            isOpen: true,
-            title: 'Name Required',
-            message: 'Please enter a name for the query before saving.'
-        });
-
-        const payload = {
-            name: queryName,
-            query,
-            folder: folderName,
-            connectionId: selectedConnection
-        };
-
-        try {
-            if (editingQuery) {
-                // Keep existing connection if not explicitly wanting to move? 
-                // For simplicity, let's update it to current connection if user saves while on a different one?
-                // Or maybe just update the contents. Let's assume user wants to update query definition, not move it unless specified.
-                // Actually user request implies strict grouping. Let's keep it simple: Update updates properties.
-                // If we want to support moving, we might need a distinct UI. 
-                // For now: update uses payload.connectionId (current selected).
-                await api.put(`/query/saved/${editingQuery.id}`, payload);
-                setEditingQuery(null);
-            } else {
-                await api.post('/query/saved', payload);
-            }
-            setQueryName('');
-            fetchSavedQueries();
-        } catch (err) {
-            setAlertModal({
-                isOpen: true,
-                title: 'Save Failed',
-                message: err.response?.data?.error || 'Failed to save query'
-            });
-        }
-    };
-
-    // Group queries by folder
-    const groupedQueries = savedQueries.reduce((acc, sq) => {
+    // Group filtered queries by folder
+    const groupedQueries = filteredQueries.reduce((acc, sq) => {
         const folder = sq.folder || 'Uncategorized';
         if (!acc[folder]) acc[folder] = [];
         acc[folder].push(sq);
@@ -487,7 +424,6 @@ const QueryTool = () => {
 
     // Compute sorted folders
     const sortedFolders = Object.keys(groupedQueries).sort((a, b) => {
-        // Uncategorized always last? Or sort based on metadata
         if (a === 'Uncategorized') return 1;
         if (b === 'Uncategorized') return -1;
 
@@ -503,6 +439,7 @@ const QueryTool = () => {
 
     return (
         <div className="page-container" style={{ height: 'calc(100vh - 4rem)', display: 'flex', flexDirection: 'column' }}>
+            {/* ... Header ... */}
             <div style={{ marginBottom: '1rem', display: 'flex', gap: '1rem', alignItems: 'center' }}>
                 <select
                     className="input"
@@ -516,6 +453,7 @@ const QueryTool = () => {
                     <option value="">Select Connection...</option>
                     {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
+                {/* ... Run/Download buttons ... */}
                 <button className="btn btn-primary" onClick={handleRun} disabled={loading}>
                     <Play size={18} /> Run
                 </button>
@@ -611,201 +549,163 @@ const QueryTool = () => {
 
                 {/* Saved Queries Sidebar */}
                 <div className="glass-panel" style={{ width: '250px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                    <div style={{ padding: '1rem', borderBottom: '1px solid var(--border)', fontWeight: '600' }}>Saved Queries</div>
+                    <div style={{ padding: '1rem', borderBottom: '1px solid var(--border)', fontWeight: '600', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>{selectedConnection ? (connections.find(c => c.id == selectedConnection)?.name || 'Saved Queries') : 'Global Queries'}</span>
+                    </div>
                     <div style={{ overflowY: 'auto', flex: 1, padding: '0.5rem' }}>
-
-                        {sortedConnectionIds.map(connId => (
-                            <div key={connId} style={{ marginBottom: '1rem' }}>
+                        {sortedFolders.map(folder => (
+                            <div key={folder} style={{ marginBottom: '0.5rem' }}>
                                 <div
-                                    onClick={() => toggleConnection(connId)}
+                                    onClick={() => toggleFolder(folder)}
                                     style={{
                                         display: 'flex', alignItems: 'center', gap: '0.5rem',
                                         padding: '0.5rem', cursor: 'pointer',
-                                        color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.75rem',
-                                        letterSpacing: '0.05em'
+                                        fontWeight: '600', color: 'var(--text-primary)',
+                                        background: 'rgba(255,255,255,0.05)', borderRadius: 'var(--radius)'
                                     }}
                                 >
-                                    {expandedConnections[connId] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                                    {getConnectionName(connId)}
+                                    {expandedFolders[folder] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                    <Folder size={14} color="var(--accent-primary)" />
+                                    <span style={{ flex: 1 }}>{folder}</span>
+
+                                    {/* Folder Actions */}
+                                    <div style={{ display: 'flex', gap: '2px' }} onClick={e => e.stopPropagation()}>
+                                        {folder !== 'Uncategorized' && (
+                                            <>
+                                                <button onClick={() => handleMoveFolder(folder, -1, sortedFolders)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '2px', cursor: 'pointer' }}><ArrowUp size={12} /></button>
+                                                <button onClick={() => handleMoveFolder(folder, 1, sortedFolders)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '2px', cursor: 'pointer' }}><ArrowDown size={12} /></button>
+                                                <button onClick={() => handleRenameFolder(folder)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '2px', cursor: 'pointer' }}><Edit size={12} /></button>
+                                            </>
+                                        )}
+                                        <button onClick={() => handleDeleteFolder(folder)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '2px', cursor: 'pointer' }}><Trash2 size={12} /></button>
+                                    </div>
                                 </div>
-
-                                {expandedConnections[connId] && (
-                                    <div style={{ paddingLeft: '0.5rem' }}>
-                                        {(() => {
-                                            const folders = groupedByConnection[connId];
-                                            const folderNames = Object.keys(folders).sort((a, b) => {
-                                                // Sort folders same way as before
-                                                if (a === 'Uncategorized') return 1;
-                                                if (b === 'Uncategorized') return -1;
-                                                const orderA = folderMetadata.find(f => f.folder_name === a)?.sort_order ?? 9999;
-                                                const orderB = folderMetadata.find(f => f.folder_name === b)?.sort_order ?? 9999;
-                                                if (orderA !== orderB) return orderA - orderB;
-                                                return a.localeCompare(b);
-                                            });
-
-                                            return folderNames.map(folder => (
-                                                <div key={folder} style={{ marginBottom: '0.5rem' }}>
-                                                    <div
-                                                        onClick={() => toggleFolder(`${connId}-${folder}`)} // This might conflict if folders with same name exist across connections? 
-                                                        // Actually `expandedFolders` just uses string key. If "Reporting" exists in 2 conns, toggling one toggles both. 
-                                                        // User might accept this behavior or we should make key unique e.g. `connId-folder`.
-                                                        // Let's use `connId-folder` for unique toggle.
-                                                        style={{
-                                                            display: 'flex', alignItems: 'center', gap: '0.5rem',
-                                                            padding: '0.5rem', cursor: 'pointer',
-                                                            fontWeight: '600', color: 'var(--text-primary)',
-                                                            background: 'rgba(255,255,255,0.05)', borderRadius: 'var(--radius)'
-                                                        }}
-                                                    >
-                                                        {expandedFolders[`${connId}-${folder}`] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                                                        <Folder size={14} color="var(--accent-primary)" />
-                                                        <span style={{ flex: 1 }}>{folder}</span>
-
-                                                        {/* Folder Actions - Only show if not Uncategorized? */}
-                                                        <div style={{ display: 'flex', gap: '2px' }} onClick={e => e.stopPropagation()}>
-                                                            {folder !== 'Uncategorized' && (
-                                                                <>
-                                                                    <button onClick={() => handleMoveFolder(folder, -1, folderNames)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '2px', cursor: 'pointer' }} title="Move Up"><ArrowUp size={12} /></button>
-                                                                    <button onClick={() => handleMoveFolder(folder, 1, folderNames)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '2px', cursor: 'pointer' }} title="Move Down"><ArrowDown size={12} /></button>
-                                                                    <button onClick={() => handleRenameFolder(folder)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '2px', cursor: 'pointer' }} title="Rename"><Edit size={12} /></button>
-                                                                </>
-                                                            )}
-                                                            <button onClick={() => handleDeleteFolder(folder)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '2px', cursor: 'pointer' }} title="Delete Folder"><Trash2 size={12} /></button>
-                                                        </div>
+                                {expandedFolders[folder] && (
+                                    <div style={{ paddingLeft: '0.5rem', marginTop: '0.25rem' }}>
+                                        {groupedQueries[folder].map(sq => (
+                                            <div
+                                                key={sq.id}
+                                                style={{
+                                                    padding: '0.5rem',
+                                                    marginBottom: '0.25rem',
+                                                    background: 'var(--bg-tertiary)',
+                                                    borderRadius: 'var(--radius)',
+                                                    cursor: 'pointer',
+                                                    fontSize: '0.875rem'
+                                                }}
+                                                onClick={() => setQuery(sq.query)}
+                                            >
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <span style={{ fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sq.name}</span>
+                                                    <div style={{ display: 'flex', gap: '0.25rem' }}>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleMoveQuery(sq, -1); }} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: 0 }}><ArrowUp size={12} /></button>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleMoveQuery(sq, 1); }} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: 0 }}><ArrowDown size={12} /></button>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleEdit(sq); }} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: 0 }}><Edit size={12} /></button>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleDeleteSaved(sq.id); }} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: 0 }}><Trash2 size={12} /></button>
                                                     </div>
-
-                                                    {expandedFolders[`${connId}-${folder}`] && (
-                                                        <div style={{ paddingLeft: '0.5rem', marginTop: '0.25rem' }}>
-                                                            {folders[folder].map(sq => (
-                                                                <div
-                                                                    key={sq.id}
-                                                                    onClick={() => {
-                                                                        setQuery(sq.query);
-                                                                        if (sq.connection_id && sq.connection_id != selectedConnection) {
-                                                                            setSelectedConnection(sq.connection_id);
-                                                                        }
-                                                                    }}
-                                                                    style={{
-                                                                        padding: '0.5rem',
-                                                                        marginBottom: '0.25rem',
-                                                                        background: 'var(--bg-tertiary)',
-                                                                        borderRadius: 'var(--radius)',
-                                                                        cursor: 'pointer',
-                                                                        fontSize: '0.875rem'
-                                                                    }}
-                                                                >
-                                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                                        <span style={{ fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sq.name}</span>
-                                                                        <div style={{ display: 'flex', gap: '0.25rem' }}>
-                                                                            <button onClick={(e) => { e.stopPropagation(); handleMoveQuery(sq, -1); }} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: 0 }} title="Move Up"><ArrowUp size={12} /></button>
-                                                                            <button onClick={(e) => { e.stopPropagation(); handleMoveQuery(sq, 1); }} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: 0 }} title="Move Down"><ArrowDown size={12} /></button>
-                                                                            <button onClick={(e) => { e.stopPropagation(); handleEdit(sq); }} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: 0 }} title="Edit"><Edit size={12} /></button>
-                                                                            <button onClick={(e) => { e.stopPropagation(); handleDeleteSaved(sq.id); }} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: 0 }} title="Delete"><Trash2 size={12} /></button>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    )}
                                                 </div>
-                                            ));
-                                        })()}
+                                            </div>
+                                        ))}
                                     </div>
                                 )}
                             </div>
                         ))}
-
-                        {savedQueries.length === 0 && (
-                            <div style={{ padding: '1rem', color: 'var(--text-secondary)', textAlign: 'center', fontSize: '0.875rem' }}>
-                                No saved queries
-                            </div>
-                        )}
                     </div>
                 </div>
             </div>
 
+            {savedQueries.length === 0 && filteredQueries.length === 0 && (
+                <div style={{ padding: '1rem', color: 'var(--text-secondary)', textAlign: 'center', fontSize: '0.875rem' }}>
+                    No saved queries
+                </div>
+            )}
+
             {/* Download Modal */}
-            {showDownloadModal && (
-                <div style={{
-                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                    background: 'rgba(0,0,0,0.5)', zIndex: 1100,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                }}>
-                    <div className="glass-panel" style={{ width: '400px', padding: '2rem', background: 'var(--bg-secondary)' }}>
-                        <h3 style={{ marginTop: 0 }}>Download Query Results</h3>
-                        <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
-                            Select the format for downloading your query results:
-                        </p>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                            <button
-                                className="btn btn-primary"
-                                onClick={handleDownloadExcel}
-                                style={{ width: '100%', justifyContent: 'center' }}
-                            >
-                                <Download size={18} /> Download as Excel (.xlsx)
-                            </button>
-                            <button
-                                className="btn btn-secondary"
-                                onClick={handleDownloadCSV}
-                                style={{ width: '100%', justifyContent: 'center' }}
-                            >
-                                <Download size={18} /> Download as CSV (.csv)
-                            </button>
-                            <button
-                                className="btn btn-secondary"
-                                onClick={() => setShowDownloadModal(false)}
-                                style={{ width: '100%', justifyContent: 'center' }}
-                            >
-                                Cancel
-                            </button>
+            {
+                showDownloadModal && (
+                    <div style={{
+                        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'rgba(0,0,0,0.5)', zIndex: 1100,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}>
+                        <div className="glass-panel" style={{ width: '400px', padding: '2rem', background: 'var(--bg-secondary)' }}>
+                            <h3 style={{ marginTop: 0 }}>Download Query Results</h3>
+                            <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+                                Select the format for downloading your query results:
+                            </p>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                <button
+                                    className="btn btn-primary"
+                                    onClick={handleDownloadExcel}
+                                    style={{ width: '100%', justifyContent: 'center' }}
+                                >
+                                    <Download size={18} /> Download as Excel (.xlsx)
+                                </button>
+                                <button
+                                    className="btn btn-secondary"
+                                    onClick={handleDownloadCSV}
+                                    style={{ width: '100%', justifyContent: 'center' }}
+                                >
+                                    <Download size={18} /> Download as CSV (.csv)
+                                </button>
+                                <button
+                                    className="btn btn-secondary"
+                                    onClick={() => setShowDownloadModal(false)}
+                                    style={{ width: '100%', justifyContent: 'center' }}
+                                >
+                                    Cancel
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
             {/* Variable Input Modal */}
-            {showVariableModal && (
-                <div style={{
-                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                    background: 'rgba(0,0,0,0.5)', zIndex: 1100,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                }}>
-                    {/* ... Variable Modal Content ... */}
-                    <div className="glass-panel" style={{ width: '400px', padding: '2rem', background: 'var(--bg-secondary)' }}>
-                        <h3 style={{ marginTop: 0, marginBottom: '1.5rem' }}>Enter Query Variables</h3>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
-                            {queryVariables.map(v => (
-                                <div key={v}>
-                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 500 }}>
-                                        {v}
-                                    </label>
-                                    <input
-                                        className="input"
-                                        style={{ width: '100%' }}
-                                        value={variableValues[v] || ''}
-                                        onChange={e => setVariableValues(prev => ({ ...prev, [v]: e.target.value }))}
-                                        placeholder={`Value for {{${v}}}`}
-                                        autoFocus={queryVariables[0] === v}
-                                    />
-                                </div>
-                            ))}
-                        </div>
-                        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
-                            <button
-                                className="btn btn-secondary"
-                                onClick={() => setShowVariableModal(false)}
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                className="btn btn-primary"
-                                onClick={handleVariableSubmit}
-                            >
-                                Run Query
-                            </button>
+            {
+                showVariableModal && (
+                    <div style={{
+                        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'rgba(0,0,0,0.5)', zIndex: 1100,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}>
+                        {/* ... Variable Modal Content ... */}
+                        <div className="glass-panel" style={{ width: '400px', padding: '2rem', background: 'var(--bg-secondary)' }}>
+                            <h3 style={{ marginTop: 0, marginBottom: '1.5rem' }}>Enter Query Variables</h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
+                                {queryVariables.map(v => (
+                                    <div key={v}>
+                                        <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 500 }}>
+                                            {v}
+                                        </label>
+                                        <input
+                                            className="input"
+                                            style={{ width: '100%' }}
+                                            value={variableValues[v] || ''}
+                                            onChange={e => setVariableValues(prev => ({ ...prev, [v]: e.target.value }))}
+                                            placeholder={`Value for {{${v}}}`}
+                                            autoFocus={queryVariables[0] === v}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+                                <button
+                                    className="btn btn-secondary"
+                                    onClick={() => setShowVariableModal(false)}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    className="btn btn-primary"
+                                    onClick={handleVariableSubmit}
+                                >
+                                    Run Query
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             <AlertModal
                 isOpen={alertModal.isOpen}
@@ -819,7 +719,7 @@ const QueryTool = () => {
                 title={confirmModal.title}
                 message={confirmModal.message}
                 onConfirm={confirmModal.onConfirm}
-                onCancel={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
             />
 
             <PromptModal

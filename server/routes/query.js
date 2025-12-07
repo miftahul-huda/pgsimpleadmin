@@ -106,6 +106,7 @@ router.post('/saved/folder/reorder', (req, res) => {
 // Save a query
 router.post('/saved', (req, res) => {
     const { name, query, folder, connectionId } = req.body;
+    console.log('POST /saved Request Body:', req.body);
     if (!name || !query) return res.status(400).json({ error: 'Name and query are required' });
 
     // Get max sort_order
