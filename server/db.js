@@ -81,8 +81,8 @@ const initDB = () => {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 
-        // Import History Table
-        db.run(`CREATE TABLE IF NOT EXISTS import_history (
+        const createImportHistoryTable = () => {
+            db.run(`CREATE TABLE IF NOT EXISTS import_history (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       connection_id INTEGER,
       table_name TEXT,
@@ -91,6 +91,19 @@ const initDB = () => {
       error_count INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
+        };
+
+        // Folder Metadata Table
+        const createFolderMetadataTable = () => {
+            db.run(`CREATE TABLE IF NOT EXISTS folder_metadata (
+      folder_name TEXT PRIMARY KEY,
+      sort_order INTEGER DEFAULT 0
+    )`);
+        };
+
+        // Execute table creations
+        createImportHistoryTable();
+        createFolderMetadataTable();
     });
 };
 

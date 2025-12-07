@@ -36,11 +36,70 @@ router.post('/:connectionId/execute', async (req, res) => {
     }
 });
 
-// Get all saved queries
+// Get all saved queries and folder metadata
 router.get('/saved', (req, res) => {
+    const response = {};
     db.all("SELECT * FROM saved_queries ORDER BY sort_order ASC, created_at DESC", [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
-        res.json(rows);
+        response.queries = rows;
+
+        db.all("SELECT * FROM folder_metadata ORDER BY sort_order ASC", [], (err, meta) => {
+            if (err) return res.status(500).json({ error: err.message });
+            response.folders = meta;
+            res.json(response);
+        });
+    });
+});
+
+// Rename folder
+router.post('/saved/folder/rename', (req, res) => {
+    const { oldName, newName } = req.body;
+    if (!oldName || !newName) return res.status(400).json({ error: 'Old and new names are required' });
+
+    db.serialize(() => {
+        db.run("BEGIN TRANSACTION");
+
+        // Update queries
+        db.run("UPDATE saved_queries SET folder = ? WHERE folder = ?", [newName, oldName], (err) => {
+            if (err) {
+                db.run("ROLLBACK");
+                return res.status(500).json({ error: err.message });
+            }
+
+            // Update metadata if exists, or insert ignore?
+            // SQLite doesn't have easiest UPSERT, but let's try updating if exists
+            db.run("INSERT OR IGNORE INTO folder_metadata (folder_name, sort_order) VALUES (?, 0)", [newName], (err) => {
+                // If old one existed, we might want its order?
+                // Simple approach: Update old metadata record to new name
+                db.run("UPDATE folder_metadata SET folder_name = ? WHERE folder_name = ?", [newName, oldName], (err) => {
+                    db.run("COMMIT", (err) => {
+                        if (err) return res.status(500).json({ error: err.message });
+                        res.json({ success: true });
+                    });
+                });
+            });
+        });
+    });
+});
+
+// Reorder folders
+router.post('/saved/folder/reorder', (req, res) => {
+    const { folders } = req.body; // [{ name, sort_order }]
+    if (!Array.isArray(folders)) return res.status(400).json({ error: 'Invalid folders array' });
+
+    db.serialize(() => {
+        db.run("BEGIN TRANSACTION");
+        const stmt = db.prepare("INSERT OR REPLACE INTO folder_metadata (folder_name, sort_order) VALUES (?, ?)");
+
+        folders.forEach(f => {
+            stmt.run(f.name, f.sort_order);
+        });
+
+        stmt.finalize();
+        db.run("COMMIT", (err) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: true });
+        });
     });
 });
 

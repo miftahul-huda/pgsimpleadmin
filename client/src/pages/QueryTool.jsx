@@ -6,6 +6,7 @@ import { sql } from '@codemirror/lang-sql';
 import * as XLSX from 'xlsx';
 import AlertModal from '../components/AlertModal';
 import ConfirmModal from '../components/ConfirmModal';
+import PromptModal from '../components/PromptModal';
 
 const QueryTool = () => {
     const [connections, setConnections] = useState([]);
@@ -15,6 +16,7 @@ const QueryTool = () => {
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const [savedQueries, setSavedQueries] = useState([]);
+    const [folderMetadata, setFolderMetadata] = useState([]); // [{ folder_name, sort_order }]
     const [queryName, setQueryName] = useState('');
     const [folderName, setFolderName] = useState('');
     const [expandedFolders, setExpandedFolders] = useState({});
@@ -25,6 +27,7 @@ const QueryTool = () => {
 
     const [alertModal, setAlertModal] = useState({ isOpen: false, title: '', message: '' });
     const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: () => { } });
+    const [promptModal, setPromptModal] = useState({ isOpen: false, title: '', message: '', defaultValue: '', onConfirm: () => { } });
 
     // showFilenameModal, downloadFormat, filename states removed
 
@@ -49,9 +52,15 @@ const QueryTool = () => {
     const fetchSavedQueries = async () => {
         try {
             const res = await api.get('/query/saved');
-            setSavedQueries(res.data);
+            // Support both old array format and new object format
+            const data = Array.isArray(res.data) ? res.data : res.data.queries;
+            const meta = (Array.isArray(res.data) ? [] : res.data.folders) || [];
+
+            setSavedQueries(data);
+            setFolderMetadata(meta);
+
             const folders = {};
-            res.data.forEach(sq => {
+            data.forEach(sq => {
                 const f = sq.folder || 'Uncategorized';
                 folders[f] = true;
             });
@@ -174,6 +183,50 @@ const QueryTool = () => {
     const toggleFolder = (folder) => {
         setExpandedFolders(prev => ({ ...prev, [folder]: !prev[folder] }));
     };
+
+    const handleRenameFolder = (oldName) => {
+        setPromptModal({
+            isOpen: true,
+            title: 'Rename Folder',
+            message: `Enter new name for folder "${oldName}":`,
+            defaultValue: oldName,
+            onConfirm: async (newName) => {
+                if (!newName || newName === oldName) {
+                    setPromptModal(prev => ({ ...prev, isOpen: false }));
+                    return;
+                }
+                try {
+                    await api.post('/query/saved/folder/rename', { oldName, newName });
+                    fetchSavedQueries();
+                } catch (err) {
+                    setAlertModal({ isOpen: true, title: 'Rename Failed', message: err.response?.data?.error || 'Failed' });
+                }
+                setPromptModal(prev => ({ ...prev, isOpen: false }));
+            }
+        });
+    };
+
+    const handleMoveFolder = async (folderName, direction, currentSortedFolders) => {
+        const currentIndex = currentSortedFolders.indexOf(folderName);
+        const targetIndex = currentIndex + direction;
+
+        if (targetIndex < 0 || targetIndex >= currentSortedFolders.length) return;
+
+        const newFolders = [...currentSortedFolders];
+        // Swap
+        [newFolders[currentIndex], newFolders[targetIndex]] = [newFolders[targetIndex], newFolders[currentIndex]];
+
+        // Create updates
+        const updates = newFolders.map((f, i) => ({ name: f, sort_order: i }));
+
+        try {
+            await api.post('/query/saved/folder/reorder', { folders: updates });
+            fetchSavedQueries();
+        } catch (err) {
+            console.error("Failed to reorder folders", err);
+        }
+    };
+
 
     const handleMoveQuery = async (query, direction) => {
         const folder = query.folder || 'Uncategorized';
@@ -353,7 +406,18 @@ const QueryTool = () => {
         return acc;
     }, {});
 
-    const sortedFolders = Object.keys(groupedQueries).sort();
+    // Compute sorted folders
+    const sortedFolders = Object.keys(groupedQueries).sort((a, b) => {
+        // Uncategorized always last? Or sort based on metadata
+        if (a === 'Uncategorized') return 1;
+        if (b === 'Uncategorized') return -1;
+
+        const orderA = folderMetadata.find(f => f.folder_name === a)?.sort_order ?? 9999;
+        const orderB = folderMetadata.find(f => f.folder_name === b)?.sort_order ?? 9999;
+
+        if (orderA !== orderB) return orderA - orderB;
+        return a.localeCompare(b);
+    });
 
     // Get unique existing folders for datalist
     const existingFolders = Array.from(new Set(savedQueries.map(sq => sq.folder).filter(Boolean)));
@@ -484,13 +548,42 @@ const QueryTool = () => {
                                     {expandedFolders[folder] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                                     <Folder size={14} color="var(--accent-primary)" />
                                     <span style={{ flex: 1 }}>{folder}</span>
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); handleDeleteFolder(folder); }}
-                                        style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '2px', cursor: 'pointer' }}
-                                        title="Delete Folder"
-                                    >
-                                        <Trash2 size={12} />
-                                    </button>
+
+                                    {/* Folder Actions */}
+                                    <div style={{ display: 'flex', gap: '2px' }} onClick={e => e.stopPropagation()}>
+                                        {folder !== 'Uncategorized' && (
+                                            <>
+                                                <button
+                                                    onClick={() => handleMoveFolder(folder, -1, sortedFolders)}
+                                                    style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '2px', cursor: 'pointer' }}
+                                                    title="Move Up"
+                                                >
+                                                    <ArrowUp size={12} />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleMoveFolder(folder, 1, sortedFolders)}
+                                                    style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '2px', cursor: 'pointer' }}
+                                                    title="Move Down"
+                                                >
+                                                    <ArrowDown size={12} />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleRenameFolder(folder)}
+                                                    style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '2px', cursor: 'pointer' }}
+                                                    title="Rename"
+                                                >
+                                                    <Edit size={12} />
+                                                </button>
+                                            </>
+                                        )}
+                                        <button
+                                            onClick={() => handleDeleteFolder(folder)}
+                                            style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '2px', cursor: 'pointer' }}
+                                            title="Delete Folder"
+                                        >
+                                            <Trash2 size={12} />
+                                        </button>
+                                    </div>
                                 </div>
                                 {expandedFolders[folder] && (
                                     <div style={{ paddingLeft: '0.5rem', marginTop: '0.25rem' }}>
@@ -650,9 +743,17 @@ const QueryTool = () => {
                 title={confirmModal.title}
                 message={confirmModal.message}
                 onConfirm={confirmModal.onConfirm}
-                onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                onCancel={() => setConfirmModal({ ...confirmModal, isOpen: false })}
             />
 
+            <PromptModal
+                isOpen={promptModal.isOpen}
+                title={promptModal.title}
+                message={promptModal.message}
+                defaultValue={promptModal.defaultValue}
+                onConfirm={promptModal.onConfirm}
+                onCancel={() => setPromptModal(prev => ({ ...prev, isOpen: false }))}
+            />
         </div >
     );
 };
