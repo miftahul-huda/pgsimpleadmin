@@ -105,7 +105,7 @@ router.post('/saved/folder/reorder', (req, res) => {
 
 // Save a query
 router.post('/saved', (req, res) => {
-    const { name, query, folder } = req.body;
+    const { name, query, folder, connectionId } = req.body;
     if (!name || !query) return res.status(400).json({ error: 'Name and query are required' });
 
     // Get max sort_order
@@ -113,9 +113,9 @@ router.post('/saved', (req, res) => {
         if (err) return res.status(500).json({ error: err.message });
         const nextOrder = (row && row.maxOrder !== null) ? row.maxOrder + 1 : 0;
 
-        db.run("INSERT INTO saved_queries (name, query, folder, sort_order) VALUES (?, ?, ?, ?)", [name, query, folder, nextOrder], function (err) {
+        db.run("INSERT INTO saved_queries (name, query, folder, connection_id, sort_order) VALUES (?, ?, ?, ?, ?)", [name, query, folder, connectionId || null, nextOrder], function (err) {
             if (err) return res.status(500).json({ error: err.message });
-            res.json({ id: this.lastID, name, query, folder, sort_order: nextOrder });
+            res.json({ id: this.lastID, name, query, folder, connectionId: connectionId || null, sort_order: nextOrder });
         });
     });
 });
@@ -143,10 +143,10 @@ router.post('/saved/reorder', (req, res) => {
 });
 
 router.put('/saved/:id', (req, res) => {
-    const { name, query, folder } = req.body;
-    db.run("UPDATE saved_queries SET name = ?, query = ?, folder = ? WHERE id = ?", [name, query, folder, req.params.id], function (err) {
+    const { name, query, folder, connectionId } = req.body;
+    db.run("UPDATE saved_queries SET name = ?, query = ?, folder = ?, connection_id = ? WHERE id = ?", [name, query, folder, connectionId, req.params.id], function (err) {
         if (err) return res.status(500).json({ error: err.message });
-        res.json({ message: 'Updated', id: req.params.id, name, query, folder });
+        res.json({ message: 'Updated', id: req.params.id, name, query, folder, connectionId });
     });
 });
 

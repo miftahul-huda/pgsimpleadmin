@@ -68,6 +68,10 @@ const initDB = () => {
                 db.run("ALTER TABLE saved_queries ADD COLUMN sort_order INTEGER DEFAULT 0", (err) => {
                     // Ignore
                 });
+                // Try to add connection_id column
+                db.run("ALTER TABLE saved_queries ADD COLUMN connection_id INTEGER", (err) => {
+                    // Ignore
+                });
             }
         });
 
