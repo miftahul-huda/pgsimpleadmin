@@ -596,7 +596,7 @@ const QueryTool = () => {
                                                 onClick={() => setQuery(sq.query)}
                                             >
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                    <span style={{ fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sq.name}</span>
+                                                    <span style={{ fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={sq.name}>{sq.name}</span>
                                                     <div style={{ display: 'flex', gap: '0.25rem' }}>
                                                         <button onClick={(e) => { e.stopPropagation(); handleMoveQuery(sq, -1); }} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: 0 }}><ArrowUp size={12} /></button>
                                                         <button onClick={(e) => { e.stopPropagation(); handleMoveQuery(sq, 1); }} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: 0 }}><ArrowDown size={12} /></button>
