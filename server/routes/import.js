@@ -11,20 +11,18 @@ const multer = require('multer');
 const csv = require('csv-parser');
 const xlsx = require('xlsx');
 const fs = require('fs');
-const { db } = require('../db');
+const { pool } = require('../db');
 const dbManager = require('../services/dbManager');
 
 const upload = multer({ dest: 'uploads/' });
 
 // Helper to get connection config
-const getConnectionConfig = (id) => {
-    return new Promise((resolve, reject) => {
-        db.get("SELECT * FROM connections WHERE id = ?", [id], (err, row) => {
-            if (err) reject(err);
-            if (!row) reject(new Error("Connection not found"));
-            resolve(row);
-        });
-    });
+const getConnectionConfig = async (id) => {
+    const result = await pool.query("SELECT * FROM connections WHERE id = $1", [id]);
+    if (result.rows.length === 0) {
+        throw new Error("Connection not found");
+    }
+    return result.rows[0];
 };
 
 router.post('/:connectionId/upload', upload.single('file'), async (req, res) => {
@@ -214,8 +212,10 @@ router.post('/:connectionId/execute-import', async (req, res) => {
         await dbManager.commit(conn);
 
         // Record history
-        db.run("INSERT INTO import_history (connection_id, table_name, file_name, row_count, error_count) VALUES (?, ?, ?, ?, ?)",
-            [connectionId, table, fileId || 'Unknown File', successCount, errorCount]);
+        await pool.query(
+            "INSERT INTO import_history (connection_id, table_name, file_name, row_count, error_count) VALUES ($1, $2, $3, $4, $5)",
+            [connectionId, table, fileId || 'Unknown File', successCount, errorCount]
+        );
 
         res.json({ success: true, successCount, errorCount });
 
@@ -227,41 +227,58 @@ router.post('/:connectionId/execute-import', async (req, res) => {
     }
 });
 
-router.get('/:connectionId/history', (req, res) => {
-    const { connectionId } = req.params;
-    db.all("SELECT * FROM import_history WHERE connection_id = ? ORDER BY created_at DESC", [connectionId], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows);
-    });
+router.get('/:connectionId/history', async (req, res) => {
+    try {
+        const { connectionId } = req.params;
+        const result = await pool.query(
+            "SELECT * FROM import_history WHERE connection_id = $1 ORDER BY created_at DESC",
+            [connectionId]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-router.get('/:connectionId/history/:tableName', (req, res) => {
-    const { connectionId, tableName } = req.params;
-    db.all("SELECT * FROM import_history WHERE connection_id = ? AND table_name = ? ORDER BY created_at DESC", [connectionId, tableName], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows);
-    });
+router.get('/:connectionId/history/:tableName', async (req, res) => {
+    try {
+        const { connectionId, tableName } = req.params;
+        const result = await pool.query(
+            "SELECT * FROM import_history WHERE connection_id = $1 AND table_name = $2 ORDER BY created_at DESC",
+            [connectionId, tableName]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 router.get('/:connectionId/mappings/:tableName', async (req, res) => {
-    const { connectionId, tableName } = req.params;
-    db.all("SELECT * FROM saved_mappings WHERE connection_id = ? AND table_name = ? ORDER BY created_at DESC", [connectionId, tableName], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows);
-    });
+    try {
+        const { connectionId, tableName } = req.params;
+        const result = await pool.query(
+            "SELECT * FROM saved_mappings WHERE connection_id = $1 AND table_name = $2 ORDER BY created_at DESC",
+            [connectionId, tableName]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 router.post('/:connectionId/mappings', async (req, res) => {
-    const { connectionId } = req.params;
-    const { tableName, name, mappings } = req.body;
+    try {
+        const { connectionId } = req.params;
+        const { tableName, name, mappings } = req.body;
 
-    db.run("INSERT INTO saved_mappings (connection_id, table_name, name, mappings) VALUES (?, ?, ?, ?)",
-        [connectionId, tableName, name, JSON.stringify(mappings)],
-        function (err) {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ id: this.lastID, success: true });
-        }
-    );
+        const result = await pool.query(
+            "INSERT INTO saved_mappings (connection_id, table_name, name, mappings) VALUES ($1, $2, $3, $4) RETURNING *",
+            [connectionId, tableName, name, JSON.stringify(mappings)]
+        );
+        res.json({ id: result.rows[0].id, success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 module.exports = router;

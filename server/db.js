@@ -1,114 +1,125 @@
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
+const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
+require('dotenv').config();
 
-const dbPath = path.resolve(__dirname, 'app.db');
-
-const db = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-        console.error('Error opening database ' + dbPath + ': ' + err.message);
-    } else {
-        console.log('Connected to the SQLite database.');
-    }
+// PostgreSQL connection configuration
+const pool = new Pool({
+    host: process.env.DB_HOST || '34.50.94.247',
+    user: process.env.DB_USER || 'nodeuser',
+    password: process.env.DB_PASSWORD || 'rotikeju98',
+    database: process.env.DB_NAME || 'pgsimpleadmin',
+    port: parseInt(process.env.DB_PORT) || 5432
 });
 
-const initDB = () => {
-    db.serialize(() => {
+// Test connection
+pool.on('connect', () => {
+    console.log('Connected to PostgreSQL database.');
+});
+
+pool.on('error', (err) => {
+    console.error('PostgreSQL pool error:', err);
+});
+
+const initDB = async () => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
         // Users Table
-        db.run(`CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE,
-      password TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`, (err) => {
-            if (err) console.error("Error creating users table:", err);
-            else {
-                // Create default admin user if not exists
-                const stmt = db.prepare("SELECT * FROM users WHERE username = ?");
-                stmt.get("admin", (err, row) => {
-                    if (!row) {
-                        const passwordHash = bcrypt.hashSync("admin123", 10);
-                        const insert = db.prepare("INSERT INTO users (username, password) VALUES (?, ?)");
-                        insert.run("admin", passwordHash);
-                        insert.finalize();
-                        console.log("Default admin user created (admin/admin123)");
-                    }
-                });
-                stmt.finalize();
-            }
-        });
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(255) UNIQUE,
+                password VARCHAR(255),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        // Check if admin user exists
+        const adminCheck = await client.query(
+            "SELECT * FROM users WHERE username = $1",
+            ["admin"]
+        );
+
+        if (adminCheck.rows.length === 0) {
+            const passwordHash = bcrypt.hashSync("admin123", 10);
+            await client.query(
+                "INSERT INTO users (username, password) VALUES ($1, $2)",
+                ["admin", passwordHash]
+            );
+            console.log("Default admin user created (admin/admin123)");
+        }
 
         // Connections Table
-        db.run(`CREATE TABLE IF NOT EXISTS connections (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT,
-      type TEXT, -- 'postgres', 'mysql', 'mssql'
-      host TEXT,
-      port INTEGER,
-      username TEXT,
-      password TEXT,
-      database TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`);
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS connections (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255),
+                type VARCHAR(50), -- 'postgres', 'mysql', 'mssql'
+                host VARCHAR(255),
+                port INTEGER,
+                username VARCHAR(255),
+                password VARCHAR(255),
+                database VARCHAR(255),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
 
-        // Saved Queries Table
-        db.run(`CREATE TABLE IF NOT EXISTS saved_queries (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT,
-      query TEXT,
-      folder TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`, (err) => {
-            if (!err) {
-                // Try to add folder column if it doesn't exist (for migration)
-                db.run("ALTER TABLE saved_queries ADD COLUMN folder TEXT", (err) => {
-                    // Ignore error if column already exists
-                });
-                // Try to add sort_order column
-                db.run("ALTER TABLE saved_queries ADD COLUMN sort_order INTEGER DEFAULT 0", (err) => {
-                    // Ignore
-                });
-                // Try to add connection_id column
-                db.run("ALTER TABLE saved_queries ADD COLUMN connection_id INTEGER", (err) => {
-                    // Ignore
-                });
-            }
-        });
+        // Saved Queries Table (with all columns from start)
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS saved_queries (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255),
+                query TEXT,
+                folder VARCHAR(255),
+                sort_order INTEGER DEFAULT 0,
+                connection_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
 
         // Saved Mappings Table
-        db.run(`CREATE TABLE IF NOT EXISTS saved_mappings (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      connection_id INTEGER,
-      table_name TEXT,
-      name TEXT,
-      mappings TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`);
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS saved_mappings (
+                id SERIAL PRIMARY KEY,
+                connection_id INTEGER,
+                table_name VARCHAR(255),
+                name VARCHAR(255),
+                mappings TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
 
-        const createImportHistoryTable = () => {
-            db.run(`CREATE TABLE IF NOT EXISTS import_history (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      connection_id INTEGER,
-      table_name TEXT,
-      file_name TEXT,
-      row_count INTEGER,
-      error_count INTEGER,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`);
-        };
+        // Import History Table
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS import_history (
+                id SERIAL PRIMARY KEY,
+                connection_id INTEGER,
+                table_name VARCHAR(255),
+                file_name VARCHAR(255),
+                row_count INTEGER,
+                error_count INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
 
         // Folder Metadata Table
-        const createFolderMetadataTable = () => {
-            db.run(`CREATE TABLE IF NOT EXISTS folder_metadata (
-      folder_name TEXT PRIMARY KEY,
-      sort_order INTEGER DEFAULT 0
-    )`);
-        };
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS folder_metadata (
+                folder_name VARCHAR(255) PRIMARY KEY,
+                sort_order INTEGER DEFAULT 0
+            )
+        `);
 
-        // Execute table creations
-        createImportHistoryTable();
-        createFolderMetadataTable();
-    });
+        await client.query('COMMIT');
+        console.log('Database tables initialized successfully.');
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Error initializing database:', err);
+        throw err;
+    } finally {
+        client.release();
+    }
 };
 
-module.exports = { db, initDB };
+module.exports = { pool, initDB };

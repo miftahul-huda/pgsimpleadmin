@@ -1,17 +1,15 @@
 const express = require('express');
 const router = express.Router();
-const { db } = require('../db');
+const { pool } = require('../db');
 const dbManager = require('../services/dbManager');
 
 // Helper to get connection config
-const getConnectionConfig = (id) => {
-    return new Promise((resolve, reject) => {
-        db.get("SELECT * FROM connections WHERE id = ?", [id], (err, row) => {
-            if (err) reject(err);
-            if (!row) reject(new Error("Connection not found"));
-            resolve(row);
-        });
-    });
+const getConnectionConfig = async (id) => {
+    const result = await pool.query("SELECT * FROM connections WHERE id = $1", [id]);
+    if (result.rows.length === 0) {
+        throw new Error("Connection not found");
+    }
+    return result.rows[0];
 };
 
 router.get('/:connectionId/tables', async (req, res) => {
