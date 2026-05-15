@@ -55,6 +55,17 @@ npm start
 -   **Frontend**: http://localhost:5173
 -   **Backend**: http://localhost:3000
 
+## Large File Uploads (GCS)
+
+To handle files larger than 32MB (Cloud Run limit), this application supports uploading directly to Google Cloud Storage.
+
+1.  **Create a Bucket**: Create a GCS bucket (e.g., `pgsimpleadmin-bucket`).
+2.  **IAM Permissions**: Grant the `Storage Object Creator` role to the service account running the application.
+3.  **Environment Variable**: Set `GCS_BUCKET` to your bucket name.
+    ```bash
+    gcloud run services update pgsimpleadmin --set-env-vars=GCS_BUCKET=pgsimpleadmin-bucket
+    ```
+
 ## License
 
 ISC

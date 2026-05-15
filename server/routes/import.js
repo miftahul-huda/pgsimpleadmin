@@ -13,6 +13,10 @@ const xlsx = require('xlsx');
 const fs = require('fs');
 const { pool } = require('../db');
 const dbManager = require('../services/dbManager');
+const { Storage } = require('@google-cloud/storage');
+
+const storage = new Storage();
+const BUCKET_NAME = process.env.GCS_BUCKET || 'pgsimpleadmin-bucket';
 
 const upload = multer({ dest: 'uploads/' });
 
@@ -25,13 +29,68 @@ const getConnectionConfig = async (id) => {
     return result.rows[0];
 };
 
-router.post('/:connectionId/upload', upload.single('file'), async (req, res) => {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-    const filePath = req.file.path;
+router.post('/:connectionId/get-upload-url', async (req, res) => {
+    try {
+        const { filename, contentType } = req.body;
+        console.log(`[GCS Debug] Generating signed URL for: ${filename} in bucket: ${BUCKET_NAME}`);
+        
+        if (!filename) return res.status(400).json({ error: 'filename required' });
+
+        const gcsFileName = `uploads/${Date.now()}-${filename}`;
+        const file = storage.bucket(BUCKET_NAME).file(gcsFileName);
+        
+        // Expires in 15 minutes
+        const expires = Date.now() + 15 * 60 * 1000;
+
+        const [url] = await file.getSignedUrl({
+            version: 'v4',
+            action: 'write',
+            expires: expires,
+            contentType: contentType || 'application/octet-stream',
+        });
+
+        res.json({ uploadUrl: url, gcsFileName });
+    } catch (err) {
+        console.error("[GCS Debug] Signed URL error:", err);
+        res.status(500).json({ 
+            error: err.message, 
+            details: "Ensure the bucket exists and the service account has 'Storage Object Creator' permissions. If running locally, ensure GOOGLE_APPLICATION_CREDENTIALS is set."
+        });
+    }
+});
+
+router.post('/:connectionId/upload', upload.single('file'), async (req, res) => {
+    let filePath;
+    let isGcs = false;
+    let gcsFileName;
+    console.log(`[Import Route Debug] POST /upload for connection: ${req.params.connectionId}`);
+
+    if (req.file) {
+        console.log(`[Import Route Debug] Standard multipart upload: ${req.file.originalname}`);
+        filePath = req.file.path;
+    } else if (req.body.gcsFileName) {
+        gcsFileName = req.body.gcsFileName;
+        isGcs = true;
+        console.log(`[Import Route Debug] GCS-based upload: ${gcsFileName}`);
+        // Download from GCS to local uploads for processing
+        filePath = `uploads/${gcsFileName.split('/').pop()}`;
+        try {
+            console.log(`[Import Route Debug] Downloading from GCS: ${gcsFileName} to ${filePath}`);
+            await storage.bucket(BUCKET_NAME).file(gcsFileName).download({ destination: filePath });
+            console.log(`[Import Route Debug] GCS Download complete`);
+        } catch (err) {
+            console.error(`[Import Route Debug] GCS Download failed:`, err);
+            return res.status(500).json({ error: `Failed to download from GCS: ${err.message}` });
+        }
+    } else {
+        return res.status(400).json({ error: 'No file uploaded' });
+    }
 
     try {
-        if (req.file.mimetype === 'text/csv' || req.file.originalname.endsWith('.csv')) {
+        const isCsv = isGcs ? filePath.toLowerCase().endsWith('.csv') : (req.file.mimetype === 'text/csv' || req.file.originalname.endsWith('.csv'));
+        
+        if (isCsv) {
             const results = [];
             fs.createReadStream(filePath)
                 .pipe(csv())
@@ -43,17 +102,19 @@ router.post('/:connectionId/upload', upload.single('file'), async (req, res) => 
                             headers: Object.keys(results[0]),
                             preview: results.slice(0, 5),
                             totalRows: results.length,
-                            fileId: req.file.filename,
+                            fileId: isGcs ? gcsFileName : req.file.filename,
                             sheets: [] // CSV has no sheets
                         });
                     } else {
-                        res.json({ headers: [], preview: [], fileId: req.file.filename, sheets: [] });
+                        res.json({ headers: [], preview: [], fileId: isGcs ? gcsFileName : req.file.filename, sheets: [] });
                     }
                 });
         } else {
             // XLSX
+            console.log(`[Import Route Debug] Parsing XLSX file: ${filePath}`);
             const workbook = xlsx.readFile(filePath);
             const sheets = workbook.SheetNames;
+            console.log(`[Import Route Debug] Sheets found: ${sheets.join(', ')}`);
             const sheetName = sheets[0];
             const sheet = workbook.Sheets[sheetName];
             const data = xlsx.utils.sheet_to_json(sheet);
@@ -63,7 +124,7 @@ router.post('/:connectionId/upload', upload.single('file'), async (req, res) => 
                 headers: data.length > 0 ? Object.keys(data[0]) : [],
                 preview: data.slice(0, 5),
                 totalRows: data.length,
-                fileId: req.file.filename,
+                fileId: isGcs ? gcsFileName : req.file.filename,
                 sheets: sheets,
                 currentSheet: sheetName
             });
@@ -76,7 +137,24 @@ router.post('/:connectionId/upload', upload.single('file'), async (req, res) => 
 
 router.post('/:connectionId/sheet-preview', async (req, res) => {
     const { fileId, sheetName } = req.body;
-    const filePath = `uploads/${fileId}`;
+    let filePath;
+    let isGcs = false;
+
+    if (fileId && fileId.startsWith('uploads/')) {
+        // It's a GCS path
+        isGcs = true;
+        filePath = `uploads/${fileId.split('/').pop()}`;
+        if (!fs.existsSync(filePath)) {
+            // Need to re-download if not present locally
+            try {
+                await storage.bucket(BUCKET_NAME).file(fileId).download({ destination: filePath });
+            } catch (err) {
+                return res.status(500).json({ error: `Failed to download from GCS: ${err.message}` });
+            }
+        }
+    } else {
+        filePath = `uploads/${fileId}`;
+    }
 
     if (!fs.existsSync(filePath)) {
         return res.status(404).json({ error: 'File session expired or not found' });
@@ -111,7 +189,21 @@ router.post('/:connectionId/execute-import', async (req, res) => {
     try {
         // If fileId is present, read from file for FULL import
         if (fileId) {
-            const filePath = `uploads/${fileId}`;
+            let filePath;
+            if (fileId.startsWith('uploads/')) {
+                // GCS
+                filePath = `uploads/${fileId.split('/').pop()}`;
+                if (!fs.existsSync(filePath)) {
+                    try {
+                        await storage.bucket(BUCKET_NAME).file(fileId).download({ destination: filePath });
+                    } catch (err) {
+                        console.error("GCS Download failed in execute-import:", err);
+                    }
+                }
+            } else {
+                filePath = `uploads/${fileId}`;
+            }
+
             if (fs.existsSync(filePath)) {
                 if (filePath.endsWith('.csv') || filePath.endsWith('.CSV') /* Logic to detect CSV if needed, but multer saves without ext usually. We can check mimetype or just try parsing */) {
                     // For simplicity, if it was uploaded as CSV, we treat as CSV. 

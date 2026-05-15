@@ -98,13 +98,41 @@ const ImportModal = ({ isOpen, onClose, connectionId, tableName, onSuccess }) =>
     const handleFileUpload = async () => {
         if (!file) return;
         setLoading(true);
-        const formData = new FormData();
-        formData.append('file', file);
 
         try {
-            const res = await api.post(`/import/${connectionId}/upload`, formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
-            });
+            let res;
+            if (file.size > 10 * 1024 * 1024) { // Use GCS for files > 10MB
+                // 1. Get Signed URL
+                const urlRes = await api.post(`/import/${connectionId}/get-upload-url`, {
+                    filename: file.name,
+                    contentType: file.type
+                });
+                const { uploadUrl, gcsFileName } = urlRes.data;
+
+                // 2. Direct upload to GCS (bypass Cloud Run 413)
+                const gcsRes = await fetch(uploadUrl, {
+                    method: 'PUT',
+                    body: file,
+                    headers: {
+                        'Content-Type': file.type || 'application/octet-stream'
+                    }
+                });
+
+                if (!gcsRes.ok) {
+                    const errorText = await gcsRes.text();
+                    throw new Error(`GCS Upload failed (${gcsRes.status}): ${errorText}`);
+                }
+
+                // 3. Process the file from GCS
+                res = await api.post(`/import/${connectionId}/upload`, { gcsFileName });
+            } else {
+                // Use standard multipart for small files
+                const formData = new FormData();
+                formData.append('file', file);
+                res = await api.post(`/import/${connectionId}/upload`, formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                });
+            }
             setPreview({ headers: res.data.headers, rows: res.data.preview });
             setFileId(res.data.fileId);
 

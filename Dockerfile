@@ -18,6 +18,7 @@ WORKDIR /app
 COPY server/package*.json ./server/
 WORKDIR /app/server
 RUN npm install --production
+RUN mkdir -p uploads
 
 # Copy server code
 COPY server/ ./
